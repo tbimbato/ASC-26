@@ -1,3 +1,10 @@
+papers/
+acoustic-space-classification/data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
+data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
+data/raw/
+data/processed/
+
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof

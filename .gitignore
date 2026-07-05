@@ -339,3 +339,6 @@ CLAUDE.md
 
 # synthetic RIRs (generated)
 data/sim/
+
+# private report drafts
+report/

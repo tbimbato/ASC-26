@@ -25,11 +25,11 @@ These need more than rectangular boxes, so each type carries a `geometry` (shoeb
 
 | Step | Script | Status |
 |------|--------|--------|
-| Room-type taxonomy + geometry | `src/room_types.py` | draft, to validate |
-| Generate synthetic RIRs | `src/simulate.py` | skeleton |
+| Room-type taxonomy + geometry | `src/room_types.py` | ready |
+| Generate synthetic RIRs | `src/simulate.py` | Ready |
 | Features from a manifest | `src/build_dataset.py` | ready (sim or real) |
 | Feature extraction (6 params) | `src/utils.py` | ready |
-| Benchmark + evaluation | `src/train.py` | ready (classical) |
-| Assemble real test set | `src/real_test.py` | later |
+| Benchmark + evaluation | `src/train.py` | ready (old!) |
+| Assemble real test set | `src/real_test.py` | todo |
 
 Setup and step-by-step in [INSTRUCTIONS.md](INSTRUCTIONS.md). Project diary in [notes.md](notes.md).

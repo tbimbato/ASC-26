@@ -3,7 +3,7 @@ acoustic-space-classification/data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
 data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
 data/raw/
 data/processed/
-
+ASC-26.code-workspace
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
@@ -318,3 +318,21 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
+
+# OS / Python cruft
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+
+# AI / agent files — stay local, never push
+AGENTS.md
+**/AGENTS.md
+CLAUDE.md
+**/CLAUDE.md
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
+*.agent.md

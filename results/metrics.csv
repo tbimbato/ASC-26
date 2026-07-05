@@ -1,1 +1,9 @@
-model,fold,accuracy,f1_macro
+eval,model,accuracy,f1_macro
+stratified5fold,RandomForest,0.924,0.8816
+stratified5fold,SVM,0.898,0.8548
+stratified5fold,kNN,0.898,0.8401
+stratified5fold,XGBoost,0.9287,0.8892
+leave1roomout,RandomForest,0.9832,0.9805
+leave1roomout,SVM,0.9729,0.9693
+leave1roomout,kNN,0.9806,0.9778
+leave1roomout,XGBoost,0.9729,0.9686

@@ -8,6 +8,8 @@ the same script serves the synthetic set and the real test set.
 """
 
 import argparse
+import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -20,18 +22,27 @@ ROOT = Path(__file__).resolve().parents[1]
 def build(manifest: Path, out: Path) -> None:
     df = pd.read_csv(manifest)
     carry = [c for c in df.columns if c != "path"]
+    total = len(df)
+    start = time.time()
 
     records = []
-    for _, row in df.iterrows():
+    for k, (_, row) in enumerate(df.iterrows(), 1):
         try:
             feats = extract_features(row["path"])
         except Exception as e:
+            sys.stdout.write("\n")
             print(f"SKIP {row['path']}: {e}")
             continue
         for c in carry:
             feats[c] = row[c]
         feats["path"] = row["path"]
         records.append(feats)
+        if k % 20 == 0 or k == total:
+            el = time.time() - start
+            sys.stdout.write(f"\r  [{k:>5}/{total}] {k / total * 100:5.1f}%  "
+                             f"features  {el:4.0f}s   ")
+            sys.stdout.flush()
+    sys.stdout.write("\n")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(records).to_csv(out, index=False)

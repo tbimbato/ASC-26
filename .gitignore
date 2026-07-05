@@ -336,3 +336,6 @@ CLAUDE.md
 .aider*
 .github/copilot-instructions.md
 *.agent.md
+
+# synthetic RIRs (generated)
+data/sim/

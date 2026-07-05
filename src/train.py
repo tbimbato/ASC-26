@@ -9,6 +9,7 @@ Two evaluations:
      measures generalization to unseen rooms. This is the honest number.
 """
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -76,7 +77,11 @@ def run_cv(df: pd.DataFrame, splitter, groups, eval_name: str,
 
 
 def main() -> None:
-    df = pd.read_csv(ROOT / "data" / "processed" / "features.csv")
+    p = argparse.ArgumentParser()
+    p.add_argument("--features", type=Path, default=ROOT / "data" / "sim" / "features.csv")
+    args = p.parse_args()
+
+    df = pd.read_csv(args.features)
     df = df.dropna(subset=["label"] + FEATURES)
     print(df["label"].value_counts(), "\n")
 

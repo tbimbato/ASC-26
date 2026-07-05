@@ -1,57 +1,35 @@
 # ASC-26 — Acoustic Space Classification
 
-Classifying rooms from their acoustic fingerprint. Given a measured room impulse response (RIR), can lightweight classical ML models recognize the type of space (office, lecture room, staircase...) using a handful of interpretable room-acoustic parameters?
+Recognizing the *type* of a space (office, lecture hall, stairwell, cathedral, forest...) from its acoustic fingerprint, the room impulse response (RIR). The core question: how far do a handful of interpretable, physics-based room-acoustic parameters go, compared to a neural network, and which transfers better from simulation to real rooms?
 
 Work in progress. MSc side project, Uppsala University (Machine Learning & Statistics).
 
-## Idea
+## Two phases
 
-Every room colors sound in its own way: reverberation time, clarity, how fast energy decays. Instead of feeding raw audio to a large neural network, this project extracts a small set of standard room-acoustic descriptors from each RIR and benchmarks classical classifiers on them. The question: how far can interpretable, computationally cheap features go for acoustic space recognition, compared to neural baselines?
+**Phase 1 (done): real RIRs, BUT ReverbDB.**
+Built the classical pipeline (6 interpretable features, 4 classifiers, honest leave-one-room-out evaluation). It works, but the dataset has only 9 rooms, so it is too small to train a neural network fairly or to claim generalization across room types. Findings and confusion matrices are archived in `results/phase1_but/`, the reasoning is in `notes.md`.
 
-The angle comes from my background: I worked as an architect before moving into ML, so the features here (RT60, C80, D50, Ts) are the same quantities used in architectural acoustics practice.
+**Phase 2 (current): synthetic dataset + sim-to-real.**
+Instead of chasing scarce, heterogeneous real datasets, generate a large, balanced, labelled RIR set with a room-acoustics simulator (`pyroomacoustics`): unlimited rooms, perfect labels, no dataset bias. Train on the synthetic set, then test on **real** held-out recordings (BUT, MIT survey, OpenAIR). The real question becomes sim-to-real transfer.
 
-## Data
+**Research question:** with the same synthetic training set, do interpretable classical features generalize to real rooms as well as (or better than) a neural network? Hypothesis: physical features transfer better because they describe room physics, while a NN can overfit to simulator artifacts.
 
-[BUT Speech@FIT Reverb Database](https://speech.fit.vut.cz/software/but-speech-fit-reverb-database): real RIRs measured in 9 rooms (offices, lecture rooms, meeting rooms, a staircase, a hotel room...). Not included in the repo; download separately into `data/raw/`.
+## Room types
+
+Everyday rooms (the hard discrimination): small office, meeting room, lecture hall, corridor, stairwell, large hall, bathroom.
+Extreme spaces (wide acoustic range, and they exist in the real test sets): cathedral, gas tank, outdoor patio, forest.
+
+These need more than rectangular boxes, so each type carries a `geometry` (shoebox, polygon, cylinder, partial enclosure, open field). See `src/room_types.py` and `notes.md` for the geometry design and its honest limitations.
 
 ## Pipeline
 
-1. `src/extract_features.py` — walks the raw dataset, indexes RIR files into `data/processed/rir_paths.csv`
-2. `src/build_dataset.py` — computes features per RIR → `data/processed/features.csv`
-3. `src/utils.py` — onset-aligned feature extraction (RT60, EDT, C80, D50, Ts, DRR) and room→label mapping
-4. `src/train.py` — benchmark over RandomForest, SVM, kNN, XGBoost with two evaluations (see below)
+| Step | Script | Status |
+|------|--------|--------|
+| Room-type taxonomy + geometry | `src/room_types.py` | draft, to validate |
+| Generate synthetic RIRs | `src/simulate.py` | skeleton |
+| Features from a manifest | `src/build_dataset.py` | ready (sim or real) |
+| Feature extraction (6 params) | `src/utils.py` | ready |
+| Benchmark + evaluation | `src/train.py` | ready (classical) |
+| Assemble real test set | `src/real_test.py` | later |
 
-## Evaluation design
-
-RIRs from the same room are highly correlated, so a naive split leaks room identity. The benchmark therefore reports two numbers:
-
-- **A. Stratified 5-fold** (all 5 classes): room-dependent, an optimistic upper bound.
-- **B. Leave-one-room-out** (classes covered by 2+ rooms: office, lecture room): the model never sees the test room. This is the honest generalization figure.
-
-## Current results (1655 RIRs, 6 features)
-
-| Eval | Best model | Accuracy | F1 macro |
-|------|-----------|----------|----------|
-| A. Stratified 5-fold (5 classes) | XGBoost | 0.93 | 0.89 |
-| B. Leave-one-room-out (2 classes, 5 rooms) | RandomForest | 0.98 | 0.98 |
-
-Six interpretable acoustic parameters are enough to recognize the type of space with high accuracy, and (on the classes where it can be tested) they transfer across rooms never seen in training. Confusion matrices and full metrics in `results/`.
-
-## Status / roadmap
-
-- [x] Dataset indexing and feature extraction
-- [x] Onset-aligned energy parameters + EDT and DRR
-- [x] Dual evaluation: stratified 5-fold + leave-one-room-out
-- [x] Metrics and confusion matrices saved to `results/`
-- [ ] Neural baseline for comparison (small CNN on raw/spectral RIR)
-- [ ] Octave-band features (spectral RT60)
-- [ ] Short writeup of findings
-
-## Setup
-
-```bash
-pip install -r requirements.txt
-python src/extract_features.py
-python src/build_dataset.py
-python src/train.py
-```
+Setup and step-by-step in [INSTRUCTIONS.md](INSTRUCTIONS.md). Project diary in [notes.md](notes.md).

@@ -49,11 +49,13 @@ class RoomType:
 # DRAFT taxonomy. Validate ranges (and the exotic approximations) before generating.
 ROOM_TYPES: list[RoomType] = [
     # --- everyday rooms (the hard discrimination lives here) ---
-    RoomType("small_office", Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.20, 0.35), note="furnished, carpet"),
+    # names aligned to the BUT ReverbDB vocabulary (utils.ROOM_LABELS) so real
+    # and synthetic manifests share labels directly, no remapping needed.
+    RoomType("office",       Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.20, 0.35), note="furnished, carpet"),
     RoomType("meeting_room", Geometry.SHOEBOX, (5, 8),   (4, 7),   (2.7, 3.2), (0.15, 0.30), note="medium"),
-    RoomType("lecture_hall", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), note="seating, mixed"),
+    RoomType("lecture_room", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), note="seating, mixed"),
     RoomType("corridor",     Geometry.SHOEBOX, (15, 40), (1.5, 3), (2.5, 3.5), (0.05, 0.15), note="hard, long and narrow"),
-    RoomType("stairwell",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), note="very reflective, tall"),
+    RoomType("staircase",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), note="very reflective, tall"),
     RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.10, 0.25), note="mixed"),
     RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.02, 0.08), note="tiled, very live"),
 

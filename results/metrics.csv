@@ -1,0 +1,9 @@
+eval,model,accuracy,f1_macro
+insim_5fold,RandomForest,0.7423,0.7412
+insim_5fold,SVM,0.7077,0.7066
+insim_5fold,kNN,0.7027,0.7026
+insim_5fold,XGBoost,0.7327,0.7324
+sim2real,RandomForest,0.3714,0.3119
+sim2real,SVM,0.3714,0.3267
+sim2real,kNN,0.3429,0.2871
+sim2real,XGBoost,0.4,0.3237

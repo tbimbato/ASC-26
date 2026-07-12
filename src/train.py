@@ -1,12 +1,14 @@
 """Benchmark classical classifiers on room-acoustic features.
 
 Two evaluations:
-  A) Stratified 5-fold CV over all classes. RIRs from the same room appear in
-     both train and test, so this measures room-dependent performance (an
-     optimistic upper bound: the model may recognize the room, not the class).
-  B) Leave-one-room-out CV, restricted to classes covered by more than one
-     room (office, lecture_room). The model never sees the test room, so this
-     measures generalization to unseen rooms. This is the honest number.
+  A) Stratified 5-fold CV on the synthetic set, all 11 classes. Each
+     synthetic room_id is a distinct simulated room sampled once, so there is
+     no repeated-room leak here: this is already a room-independent estimate
+     of in-sim performance.
+  B) Sim-to-real: train on the synthetic set restricted to the classes that
+     overlap with the real BUT set (office, meeting_room, lecture_room,
+     staircase), test on the real held-out rooms. This is the honest
+     generalization number the project is actually about.
 """
 
 import argparse
@@ -15,12 +17,11 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (ConfusionMatrixDisplay, accuracy_score,
                              confusion_matrix, f1_score)
-from sklearn.model_selection import LeaveOneGroupOut, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
@@ -31,6 +32,7 @@ RESULTS = ROOT / "results"
 RESULTS.mkdir(exist_ok=True)
 
 FEATURES = ["rt60", "edt", "c80", "d50", "ts", "drr"]
+OVERLAP_CLASSES = ["office", "meeting_room", "lecture_room", "staircase"]
 
 
 def make_models() -> dict:
@@ -43,16 +45,27 @@ def make_models() -> dict:
     }
 
 
-def run_cv(df: pd.DataFrame, splitter, groups, eval_name: str,
-           metrics: list, feature_cols: list[str]) -> None:
+def save_confusion(y_true, y_pred, labels, model_name: str, eval_name: str) -> None:
+    cm = confusion_matrix(y_true, y_pred, labels=range(len(labels)))
+    disp = ConfusionMatrixDisplay(cm, display_labels=labels)
+    fig, ax = plt.subplots(figsize=(6, 5))
+    disp.plot(ax=ax, colorbar=False, xticks_rotation=45)
+    ax.set_title(f"{model_name} ({eval_name})")
+    fig.tight_layout()
+    fig.savefig(RESULTS / f"cm_{eval_name}_{model_name}.png", dpi=150)
+    plt.close(fig)
+
+
+def run_cv(df: pd.DataFrame, eval_name: str, metrics: list,
+           feature_cols: list[str]) -> None:
     X = df[feature_cols].values
-    y_raw = df["label"].values
     le = LabelEncoder()
-    y = le.fit_transform(y_raw)
+    y = le.fit_transform(df["label"].values)
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
     for model_name, model in make_models().items():
         all_true, all_pred = [], []
-        for train_idx, test_idx in splitter.split(X, y, groups):
+        for train_idx, test_idx in skf.split(X, y):
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X[train_idx])
             X_test = scaler.transform(X[test_idx])
@@ -65,40 +78,56 @@ def run_cv(df: pd.DataFrame, splitter, groups, eval_name: str,
         metrics.append({"eval": eval_name, "model": model_name,
                         "accuracy": round(acc, 4), "f1_macro": round(f1m, 4)})
         print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} f1_macro={f1m:.3f}")
+        save_confusion(all_true, all_pred, le.classes_, model_name, eval_name)
 
-        cm = confusion_matrix(all_true, all_pred)
-        disp = ConfusionMatrixDisplay(cm, display_labels=le.classes_)
-        fig, ax = plt.subplots(figsize=(6, 5))
-        disp.plot(ax=ax, colorbar=False, xticks_rotation=45)
-        ax.set_title(f"{model_name} ({eval_name})")
-        fig.tight_layout()
-        fig.savefig(RESULTS / f"cm_{eval_name}_{model_name}.png", dpi=150)
-        plt.close(fig)
+
+def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
+                metrics: list, feature_cols: list[str]) -> None:
+    le = LabelEncoder()
+    le.fit(train_df["label"].values)
+    y_train = le.transform(train_df["label"].values)
+    y_test = le.transform(test_df["label"].values)
+    X_train_raw = train_df[feature_cols].values
+    X_test_raw = test_df[feature_cols].values
+
+    for model_name, model in make_models().items():
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train_raw)
+        X_test = scaler.transform(X_test_raw)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        acc = accuracy_score(y_test, y_pred)
+        f1m = f1_score(y_test, y_pred, average="macro")
+        metrics.append({"eval": eval_name, "model": model_name,
+                        "accuracy": round(acc, 4), "f1_macro": round(f1m, 4)})
+        print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} f1_macro={f1m:.3f}")
+        save_confusion(y_test, y_pred, le.classes_, model_name, eval_name)
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--features", type=Path, default=ROOT / "data" / "sim" / "features.csv")
+    p.add_argument("--sim-features", type=Path, default=ROOT / "data" / "sim" / "features.csv")
+    p.add_argument("--real-features", type=Path, default=ROOT / "data" / "real" / "features.csv")
     args = p.parse_args()
 
-    df = pd.read_csv(args.features)
-    df = df.dropna(subset=["label"] + FEATURES)
-    print(df["label"].value_counts(), "\n")
+    sim = pd.read_csv(args.sim_features).dropna(subset=["label"] + FEATURES)
+    real = pd.read_csv(args.real_features).dropna(subset=["label"] + FEATURES)
+    print(sim["label"].value_counts(), "\n")
 
     metrics: list = []
 
-    # A) room-dependent (upper bound)
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    run_cv(df, skf, None, "stratified5fold", metrics, FEATURES)
+    # A) in-sim, all classes, already room-independent (one RIR per simulated room)
+    run_cv(sim, "insim_5fold", metrics, FEATURES)
 
-    # B) room-independent, only classes with >= 2 rooms
-    rooms_per_class = df.groupby("label")["room_id"].nunique()
-    multi = rooms_per_class[rooms_per_class >= 2].index.tolist()
-    sub = df[df["label"].isin(multi)].reset_index(drop=True)
-    print(f"\nLeave-one-room-out on classes {multi} "
-          f"({sub['room_id'].nunique()} rooms, {len(sub)} samples)")
-    logo = LeaveOneGroupOut()
-    run_cv(sub, logo, sub["room_id"].values, "leave1roomout", metrics, FEATURES)
+    # B) sim-to-real: train on synthetic overlap classes, test on real held-out rooms
+    sim_overlap = sim[sim["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
+    real_overlap = real[real["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
+    print(f"\nSim-to-real on classes {OVERLAP_CLASSES}: "
+          f"{len(sim_overlap)} synthetic train rooms, "
+          f"{real_overlap['room_id'].nunique()} real test rooms "
+          f"({len(real_overlap)} samples)")
+    run_holdout(sim_overlap, real_overlap, "sim2real", metrics, FEATURES)
 
     out = pd.DataFrame(metrics)
     out.to_csv(RESULTS / "metrics.csv", index=False)

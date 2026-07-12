@@ -61,3 +61,17 @@ In code this is a `geometry` field per room type and one builder per geometry ki
 ### Open decisions
 - Validate the room-type taxonomy, geometry choices and dimension/absorption ranges (`room_types.py`), especially the exotic spaces where my estimates are rough.
 - Neural side (phase 3): small CNN on RIR spectrograms, or convolve RIRs with speech and use a pretrained SOTA audio model. Decide when we get there.
+
+### Fixing the leave-one-room-out confusion (July '26)
+
+Ported `train.py` from phase 1 as-is at first, including the leave-one-room-out CV. Ran it on the synthetic set and it hung for a long time on "Leave-one-room-out on classes [...11 classes...] (2200 rooms, 2200 samples)". Killed it.
+
+The reason: in the synthetic set every `room_id` is a distinct simulated room generated once, so rooms == samples, 1:1. Leave-one-room-out degenerates into leave-one-sample-out CV, thousands of folds, no extra rigor over a plain stratified k-fold, just very slow (refits every model per fold).
+
+Leave-one-room-out only ever made sense for the real BUT set, where a handful of physical rooms are each recorded multiple times (few rooms, many RIRs), so a naive split leaks the room identity. That axis doesn't exist in the synthetic set by construction.
+
+Fixed `train.py`:
+- Eval A stays a stratified 5-fold CV on the full synthetic set (`insim_5fold`). It's already room-independent because rooms don't repeat.
+- Eval B is now the actual sim-to-real test (`sim2real`): train on synthetic restricted to the overlap classes (office, meeting_room, lecture_room, staircase), test on the real held-out set for those classes. This is the eval that matters for the paper's claim.
+
+Old `cm_leave1roomout_*.png` / `cm_stratified5fold_*.png` in `results/` are stale (from the old scheme, one run partial from the kill). Will be replaced by `cm_insim_5fold_*.png` and `cm_sim2real_*.png` on the next run.

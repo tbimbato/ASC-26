@@ -19,7 +19,14 @@ Dimensions in meters. Interpretation of (x, y, z) depends on geometry:
   - cylinder                    : x = diameter, z = height (y ignored)
   - open_field                  : x, y = ground extent, z = height of the "sky" box
 `absorption` is a coarse mean absorption range; simulate.py maps it to
-frequency-dependent materials. `extra` holds geometry-specific knobs.
+frequency-dependent, per-surface materials. `extra` holds geometry-specific
+knobs, including `tilt`, the spectral shape of the absorption:
+  - "soft" : absorption rises with frequency (carpet, seating, curtains, people;
+             offices, meeting/lecture rooms, halls). This is what a flat single
+             coefficient was missing and why v1 IRs came out too "dry".
+  - "hard" : nearly flat, slightly more at low frequency (concrete, tile, steel,
+             stone; staircase, corridor, bathroom, cathedral, gas tank).
+  - "neutral": mild rise (default, mixed surfaces).
 """
 
 from dataclasses import dataclass, field
@@ -64,23 +71,24 @@ ROOM_TYPES: list[RoomType] = [
     # --- everyday rooms (the hard discrimination lives here) ---
     # names aligned to the BUT ReverbDB vocabulary (utils.ROOM_LABELS) so real
     # and synthetic manifests share labels directly, no remapping needed.
-    RoomType("office",       Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.12, 0.35), note="RT60 ~0.5-1.0s, treated to untreated [Long]"),
-    RoomType("meeting_room", Geometry.SHOEBOX, (5, 8),   (4, 7),   (2.7, 3.2), (0.10, 0.28), note="RT60 ~0.6-1.0s [Long]"),
-    RoomType("lecture_room", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), note="RT60 ~0.8-1.0s [BB93, S12.60]"),
-    RoomType("corridor",     Geometry.SHOEBOX, (15, 40), (1.5, 3), (2.5, 3.5), (0.05, 0.15), note="RT60 ~1.0-2.0s, hard long narrow"),
-    RoomType("staircase",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), note="RT60 ~2-4s, concrete, tall"),
-    RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.12, 0.28), note="RT60 ~1.5-2.2s, multipurpose [Beranek]"),
-    RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.04, 0.12), note="RT60 ~0.6-1.2s, tiled live"),
+    RoomType("office",       Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.12, 0.35), extra={"tilt": "soft"}, note="RT60 ~0.5-1.0s, treated to untreated [Long]"),
+    RoomType("meeting_room", Geometry.SHOEBOX, (5, 8),   (4, 7),   (2.7, 3.2), (0.10, 0.28), extra={"tilt": "soft"}, note="RT60 ~0.6-1.0s [Long]"),
+    RoomType("lecture_room", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), extra={"tilt": "soft"}, note="RT60 ~0.8-1.0s [BB93, S12.60]"),
+    RoomType("corridor",     Geometry.SHOEBOX, (15, 40), (1.5, 3), (2.5, 3.5), (0.05, 0.15), extra={"tilt": "hard"}, note="RT60 ~1.0-2.0s, hard long narrow"),
+    RoomType("staircase",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), extra={"tilt": "hard"}, note="RT60 ~2-4s, concrete, tall"),
+    RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.12, 0.28), extra={"tilt": "soft"}, note="RT60 ~1.5-2.2s, multipurpose [Beranek]"),
+    RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.04, 0.12), extra={"tilt": "hard"}, note="RT60 ~0.6-1.2s, tiled live"),
 
     # --- exotic / extreme (easy to classify, add range, testable vs OpenAIR reals) ---
     RoomType("cathedral",    Geometry.POLYGON, (25, 60), (12, 25), (12, 30),   (0.04, 0.10),
-             extra={"facets": 16, "vaulted": True}, note="stone, huge, very long RT60"),
-    RoomType("gas_tank",     Geometry.CYLINDER, (8, 25),  (8, 25),  (10, 30),  (0.01, 0.05),
-             extra={"facets": 24}, note="steel cylinder, extreme metallic reverb"),
+             extra={"facets": 16, "vaulted": True, "tilt": "hard"}, note="stone, huge, very long RT60"),
+    # gas_tank removed: no real counterpart in the held-out set (BUT+AIR+ACE),
+    # slowest class to simulate, and thematically a novelty. Cathedral already
+    # covers the extreme long-reverb end. The CYLINDER builder is kept for reuse.
     RoomType("outdoor_patio", Geometry.PARTIAL, (4, 10),  (3, 8),   (2.5, 4.0), (0.15, 0.30),
-             extra={"open_walls": 2, "ground_absorption": (0.2, 0.5)}, note="walls on 1-2 sides + open air"),
+             extra={"open_walls": 2, "ground_absorption": (0.2, 0.5), "tilt": "neutral"}, note="walls on 1-2 sides + open air"),
     RoomType("outdoor_forest", Geometry.OPEN_FIELD, (30, 80), (30, 80), (15, 30), (0.85, 0.98),
-             extra={"ground_absorption": (0.3, 0.7), "scattering": (0.4, 0.8)}, note="near free field + trees scatter"),
+             extra={"ground_absorption": (0.3, 0.7), "scattering": (0.4, 0.8), "tilt": "soft"}, note="near free field + trees scatter"),
 ]
 
 ROOM_TYPE_NAMES = [rt.name for rt in ROOM_TYPES]

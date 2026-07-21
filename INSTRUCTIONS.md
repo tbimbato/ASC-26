@@ -50,7 +50,7 @@ Any CSV with a `path` column (to a WAV RIR) plus label columns carried through:
 
 ### Reading results
 `train.py` writes `results/metrics.csv` and confusion matrices for two evals:
-- `insim_5fold`: stratified 5-fold on the synthetic set (all 11 classes). Already
+- `insim_5fold`: stratified 5-fold on the synthetic set (all 10 classes). Already
   room-independent (one RIR per simulated room), so this is a clean in-sim number.
 - `sim2real`: train on synthetic (overlap classes only), test on the real held-out
   rooms. The honest generalization number the project is about.

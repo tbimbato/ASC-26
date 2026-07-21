@@ -1,0 +1,5 @@
+eval,model,seed,accuracy,f1_macro
+nn_insim,SmallCNN,42,0.855,0.8528
+nn_insim_overlap,SmallCNN,42,0.86,0.8527
+nn_sim2real,SmallCNN,42,0.3881,0.325
+nn_sim2real_coarse,SmallCNN,42,0.6418,0.4599

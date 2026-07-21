@@ -154,6 +154,10 @@ def main() -> None:
     # B) sim-to-real: train on synthetic overlap classes, test on real held-out rooms
     sim_overlap = sim[sim["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
     real_overlap = real[real["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
+
+    # in-sim on the same 4 overlap classes, so the in-sim -> sim2real drop is
+    # computed on the same task (the 11-class number is not comparable)
+    run_cv(sim_overlap, "insim_overlap_5fold", metrics, FEATURES)
     print(f"\nSim-to-real on classes {OVERLAP_CLASSES}: "
           f"{len(sim_overlap)} synthetic train rooms, "
           f"{real_overlap['room_id'].nunique()} real test rooms "

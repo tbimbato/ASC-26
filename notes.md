@@ -179,3 +179,153 @@ happens to also score higher for RF). The ~+28 points fine->coarse is now an
 official, reproducible result, not a side calculation.
 
 Remaining: neural baseline on the same protocol, then the report.
+
+### Neural baseline, first two rounds (21 July '26)
+
+Built the neural side in `src/nn/`: ingestion (`ingest.py`, resample to 16k,
+onset alignment, peak-normalize, fixed 2.0 s), log-mel embedding 64 bands
+(`model.py`, STFT would hand the net a 4x bigger image for no benefit with
+2200 samples; Schroeder curve rejected as circular, it IS the hand-crafted
+physics), and a ~24k-param CNN. Same protocol as the classical side, coarse
+re-scored after prediction with the same map, results in `metrics_nn.csv`.
+
+v1 (naive: no augmentation, no batchnorm/dropout) told the story the
+hypothesis predicted: in-sim fine (0.65), sim2real collapse (fine 0.37,
+coarse 0.54 vs RF 0.70, f1 0.23 = dumps everything on few classes). The net
+trusted simulator details that do not exist in reality.
+
+v2 (batchnorm + dropout + weight decay, and two training-time augmentations:
+a random noise floor at -70..-30 dB below peak, because sim IRs are perfectly
+silent and real recordings never are, plus SpecAugment stripes) changed the
+picture: insim 0.73 (beats RF 0.71), sim2real fine 0.36 (same ceiling as
+everyone), coarse 0.72, dead even with RF 0.70. The noise floor did exactly
+what it was designed to do: v2's errors are now almost all intra-archetype,
+like the classical models.
+
+So the honest story matured. Not "the net collapses and features win", but:
+a naive net collapses sim2real for a reason the hypothesis predicted
+(simulator artifacts, here the missing noise floor), and a physically
+motivated augmentation recovers it, but you had to know which artifact to
+patch. The 6 physical features had that robustness by construction, no
+patches, and stay interpretable. That is the comparison the report should
+make: robustness for free and readable, vs robustness recoverable at the
+cost of knowing what to fix.
+
+Caveats, non-negotiable in the writeup: 67 real samples means 0.72 vs 0.70
+is literally one sample; single seed so far. Next runs queued: multi-seed
+(SEEDS list in train_nn.py, mean +/- std) and `insim_overlap_5fold` added to
+train.py so the in-sim -> sim2real drop is computed on the same 4-class task
+for both sides.
+
+### Making the simulator more realistic (21 July '26)
+
+The real-data ceiling is 18 rooms and no dataset search breaks it (full sweep
+of the Graphi07/room-impulse-responses catalogue below), so the only remaining
+lever is the synthetic side. Two things it can do: be *more realistic* (shrink
+the sim-to-real gap) and be *more varied* (help the data-hungry net). Note the
+asymmetry from the "too many synthetics" discussion: raw count mostly sharpens
+the in-sim number and can even widen the net's sim2real drop; realism and
+diversity are what actually move sim2real. So the work went into materials, not
+just quantity.
+
+Done, v2 materials in simulate.py + room_types.py:
+  - Frequency-dependent absorption. v1 used one flat coefficient per room, which
+    is why the IRs came out "dry" and uniform (the thing spotted by eye back in
+    commit 8bcd55b). Now the mean absorption is spread over octave bands
+    (125 Hz..8 kHz) by a per-type spectral `tilt`: "soft" rises with frequency
+    (carpet/seats/curtains/people: office, meeting, lecture, hall, forest),
+    "hard" stays nearly flat with slightly more low-frequency absorption
+    (concrete/tile/steel/stone: staircase, corridor, bathroom, cathedral, tank).
+  - Per-surface materials for shoeboxes. Each of the six faces gets its own
+    absorption around the room mean, so the box is never perfectly uniform
+    (real rooms: carpet floor, tiled ceiling, mixed walls). Adds realism and
+    variance at once.
+  - Smoke-tested (one room per type): RT60 ladder stays physical and ordered
+    (office 0.9, lecture 1.6, staircase 1.7, cathedral 5.6, tank 7.6, open
+    patio 0.1). Not re-run at scale yet (Tommi runs the heavy sim).
+
+Not tuned to the real medians (that would leak the held-out test). The tilt
+shapes come from material physics, not from fitting BUT/AIR/ACE.
+
+Next realism steps if still needed, in order of expected payoff:
+  1. Domain randomization: widen the parameter ranges and randomize source
+     directivity / receiver, so the net cannot lean on any one simulator
+     regularity. Cheapest, attacks the drop directly.
+  2. Convolve the IRs with clean speech + add a measured noise floor, to mimic a
+     real recording chain rather than a clean IR. (We already inject a noise
+     floor as NN augmentation; doing it at data level would also touch the
+     classical features, so keep it as a separate "realistic-recording" variant,
+     not the main set, or it corrupts RT60.)
+  3. Frequency-dependent scattering and proper named materials from pra's
+     materials database, instead of a single scattering scalar.
+
+### Other RIR simulators / engines (for the report's future-work, and as a
+### possible second synthetic "domain")
+
+pyroomacoustics is image-source + ray tracing (geometrical acoustics): fast,
+good for the mid/late statistics we measure, but it misses wave effects
+(diffraction, modal behaviour at low frequency, real curved surfaces). Families
+of alternatives, roughly by engine:
+  - Geometrical, same family: gpuRIR (GPU image-source, very fast, good for
+    generating a lot), and most game-audio engines. Same blind spots as pra.
+  - Wave-based (solve the wave equation): FDTD solvers (k-Wave, parallel FDTD),
+    boundary/finite element. Physically accurate incl. diffraction and modes,
+    but slow and heavy; usually low-frequency only.
+  - Perceptual / feedback-delay-network: RAZR. Cheap, plausible late reverb,
+    not geometry-faithful.
+  - Hybrid commercial: Treble (wave + geometrical), high fidelity, not free.
+  - Neural RIR generators: MESH2IR, FAST-RIR (both seen in the GTU repo). Learn
+    to emit an IR from a room mesh; interesting but they are themselves trained
+    on simulated/real data, so not an independent physics.
+Idea worth a paragraph: using a *different engine for the test set* than for
+training is a sim-to-sim robustness probe, a cheap stand-in for real data. If
+the 6 features survive an engine swap better than the net does, that is the same
+hypothesis (features track physics, net tracks the generator) tested without
+needing more real rooms. pyroomacoustics -> gpuRIR or -> RAZR is the easy pair.
+
+### Can we simulate other labels?
+
+Yes, trivially (add a RoomType to room_types.py), but with a caveat that decides
+whether it is worth it. A new synthetic label only helps the *in-sim* number
+unless the same type also exists in the real held-out set, because sim2real is
+restricted to the overlap classes (office, meeting_room, lecture_room,
+staircase). So:
+  - Labels that would strengthen sim2real: only ones with real rooms available.
+    From the datasets we have, that is essentially conference_room (BUT+ACE) and
+    maybe bathroom/corridor (AIR has a couple). Adding these to the overlap set
+    is the highest-value label work.
+  - Labels that only widen in-sim range: gym/sports hall, classroom (distinct
+    from lecture), open-plan office, restaurant, parking garage, tunnel, small
+    booth/closet, swimming pool, theatre, small church. Fine for showing the
+    feature ladder and for the coarse archetypes, but they do not touch the
+    headline sim2real comparison, so low priority.
+  - The taxonomy insight (Section "half functional half acoustic") says the
+    interesting label work is not more fine labels but better *archetypes*:
+    grouping by acoustic signature. Adding fine labels inside the same archetype
+    (another kind of small furnished room) mostly adds confusable classes, which
+    is only worth doing if a matching real room exists to test on.
+
+### The 18-room ceiling: full dataset sweep (21 July '26)
+
+Went through the whole Graphi07/room-impulse-responses catalogue (20 real RIR
+datasets) plus MP-RIR, filtering on the only axis that matters for us: distinct
+physical rooms, labelled by function. Result: nothing breaks the ceiling.
+  - 11 of 20 are single-room (FLAIR, SRIRACHA, MP-RIR, HOMULA, MIRACLE, Arni,
+    Motus, dEchorate, MeshRIR, Bar-Ilan multichannel, and the 1-room grids):
+    millions of RIRs but one acoustic space each. Room-leakage traps.
+  - 3 we already use (BUT 8, ACE 7, AIR 5).
+  - MIT (271 distinct places) already rejected: IRs truncated, too little
+    dynamic range for a T30-style RT60.
+  - REVERB (3 rooms) and GTU-RIR (11 rooms) have the rooms but no functional
+    type labels; GTU stores only room *dimensions*, and its named rooms are
+    either redundant (conference) or off-taxonomy (sport hall, generator), while
+    the 8 numbered rooms have no derivable type. Labelling them by ear from the
+    acoustics is the circular labelling we forbid.
+  - RWCP (14 rooms, anechoic/tatami/lab), OpenAIR (churches/halls), C4DM
+    (3 large): off-taxonomy or extreme-only.
+  - SoundCam (3 rooms): its one mappable room (conference) is not in the sim2real
+    overlap set, so it adds nothing to the comparison; 10-channel, large.
+Conclusion for the report: 18 rooms is the practical ceiling of publicly
+available, functionally-labelled, full-dynamic-range RIR data. This is a
+structural property of the field (people record one room densely, not many rooms
+each once), not a gap in the search. State it as a declared limitation.

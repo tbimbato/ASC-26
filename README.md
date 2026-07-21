@@ -19,7 +19,7 @@ Instead of chasing scarce, heterogeneous real datasets, generate a large, balanc
 ## Room types
 
 Everyday rooms (the hard discrimination): small office, meeting room, lecture hall, corridor, stairwell, large hall, bathroom.
-Extreme spaces (wide acoustic range, and they exist in the real test sets): cathedral, gas tank, outdoor patio, forest.
+Extreme spaces (wide acoustic range, in-simulation only, no real counterpart in the held-out set): cathedral, outdoor patio, forest.
 
 These need more than rectangular boxes, so each type carries a `geometry` (shoebox, polygon, cylinder, partial enclosure, open field). See `src/room_types.py` and `notes.md` for the geometry design and its honest limitations.
 

@@ -5,9 +5,11 @@ a held-out test set (sim-to-real) and handled separately in real_test.py.
 (real ds are not downloaded yet at this stage!)
 
 One builder per geometry kind (shoebox, polygon, cylinder, partial, open_field).
-v1 uses a single (frequency-independent) absorption per room drawn from the type
-range, plus scattering for the diffuse/exotic cases. Frequency-dependent
-materials are a later refinement.
+v2 materials: absorption is frequency-dependent (a coefficient per octave band,
+shaped by the room type's `tilt`) and, for shoebox rooms, drawn per surface
+(floor, ceiling and the four walls differ), around the type's mean. This
+replaces v1's single flat coefficient per room, which produced unnaturally
+uniform, "dry" decays. Scattering is kept for the diffuse/exotic cases.
 
     python src/simulate.py --smoke            # tiny run to sanity-check
     python src/simulate.py --n-per-type 300   # full run
@@ -23,7 +25,7 @@ import numpy as np
 import pyroomacoustics as pra
 import soundfile as sf
 
-from room_types import ROOM_TYPES, Geometry
+from room_types import ROOM_TYPES, ROOM_TYPE_NAMES, Geometry
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "data" / "sim"
@@ -34,6 +36,26 @@ FS = 16000        # match real test sets (BUT is 16 kHz)
 MAX_ORDER = 3     # image-source order; ray tracing carries the late tail
 MIN_SRC_MIC_DIST = 1.0
 MARGIN = 0.6      # keep sources/mics away from surfaces (m)
+# Ray-tracing receiver sphere. The auto ray count scales ~1/radius^2, so a
+# larger sphere means far fewer rays. Was 0.5 m (pyroomacoustics default).
+# Raised to 0.8 m: ~2.3x faster on the slow rooms (large hall 11.5s->5.1s,
+# cathedral 39s->16s) while the 6 features shift less than the room-to-room
+# variance. Smears arrivals by ~2.3 ms, still under the 2.5 ms DRR direct
+# window, so the direct sound (and the CNN's early-reflection structure) is
+# better preserved than at 1.2 m. Conservative fidelity/speed balance.
+RECEIVER_RADIUS = 0.8
+
+# Octave band centers for frequency-dependent materials (up to fs/2 = 8 kHz).
+OCTAVE_BANDS = [125, 250, 500, 1000, 2000, 4000, 8000]
+
+# Spectral shape of the absorption per tilt, one multiplier per octave band,
+# roughly mean-1 so it redistributes a given mean absorption across frequency
+# without changing its overall level much. See room_types.py for the physics.
+TILT_SHAPES = {
+    "soft":    [0.55, 0.70, 0.90, 1.05, 1.25, 1.45, 1.55],  # rises with freq
+    "hard":    [1.25, 1.15, 1.05, 1.00, 0.92, 0.85, 0.80],  # flat, slight low
+    "neutral": [0.80, 0.90, 1.00, 1.05, 1.10, 1.15, 1.20],  # mild rise
+}
 
 
 # --- helpers ---------------------------------------------------------------
@@ -44,6 +66,32 @@ def _u(rng, lo_hi):
 
 def _mat(absorption, scattering=None):
     return pra.Material(absorption, scattering) if scattering is not None else pra.Material(absorption)
+
+
+def _freq_mat(rng, mean_abs, tilt, scattering=None, surface_factor=1.0):
+    """A frequency-dependent pra.Material: the mean absorption is spread over
+    the octave bands by the tilt shape, jittered a little per band, and scaled
+    by an optional per-surface factor. Coefficients are clipped to a physical
+    (0.01, 0.99) range."""
+    shape = TILT_SHAPES.get(tilt, TILT_SHAPES["neutral"])
+    coeffs = []
+    for m in shape:
+        a = mean_abs * m * surface_factor * rng.uniform(0.9, 1.1)
+        coeffs.append(float(np.clip(a, 0.01, 0.99)))
+    ea = {"coeffs": coeffs, "center_freqs": OCTAVE_BANDS}
+    return pra.Material(ea, scattering) if scattering is not None else pra.Material(ea)
+
+
+def _shoebox_materials(rng, spec):
+    """Per-surface frequency-dependent materials for a shoebox. Each of the six
+    surfaces gets its own absorption factor around the room mean, so the box is
+    not perfectly uniform (real rooms never are: carpet floor, tiled ceiling,
+    mixed walls)."""
+    tilt = spec["extra"].get("tilt", "neutral")
+    a, s = spec["a"], spec["scat"]
+    surfaces = ["east", "west", "north", "south", "ceiling", "floor"]
+    return {w: _freq_mat(rng, a, tilt, s, surface_factor=rng.uniform(0.8, 1.25))
+            for w in surfaces}
 
 
 def _ngon(rx, ry, n, cx, cy):
@@ -98,22 +146,23 @@ def sample_room(rt, rng):
 # --- geometry builders -----------------------------------------------------
 # Each returns (room, placer) where placer(rng) -> (src_xyz, mic_xyz).
 
-def build_shoebox(spec, mats=None):
+def build_shoebox(spec, mats=None, rng=None):
     Lx, Ly, Lz = spec["Lx"], spec["Ly"], spec["Lz"]
-    mats = mats if mats is not None else _mat(spec["a"], spec["scat"])
+    if mats is None:
+        mats = _shoebox_materials(rng, spec)
     room = pra.ShoeBox([Lx, Ly, Lz], materials=mats, **_new_room())
     return room, lambda rng: _box_points(rng, Lx, Ly, Lz)
 
 
 def build_partial(spec, rng):
-    e, a, s = spec["extra"], spec["a"], spec["scat"]
+    e, a, s, tilt = spec["extra"], spec["a"], spec["scat"], spec["extra"].get("tilt", "neutral")
     ground = _u(rng, e.get("ground_absorption", (0.2, 0.5)))
     walls = ["north", "south", "east", "west"]
     k = min(int(e.get("open_walls", 2)), 4)
     openw = set(rng.choice(walls, size=k, replace=False).tolist())
-    mats = {w: (_mat(0.99) if w in openw else _mat(a, s)) for w in walls}
-    mats["ceiling"] = _mat(0.99)      # open sky
-    mats["floor"] = _mat(ground)      # ground
+    mats = {w: (_mat(0.99) if w in openw else _freq_mat(rng, a, tilt, s)) for w in walls}
+    mats["ceiling"] = _mat(0.99)                    # open sky
+    mats["floor"] = _freq_mat(rng, ground, "hard")  # ground
     return build_shoebox(spec, mats)
 
 
@@ -124,7 +173,7 @@ def build_open_field(spec, rng):
     sky = _mat(0.98, scat)
     mats = {w: sky for w in ["north", "south", "east", "west"]}
     mats["ceiling"] = _mat(0.98, scat)
-    mats["floor"] = _mat(ground, scat)
+    mats["floor"] = _freq_mat(rng, ground, "soft", scat)  # foliage/ground damps highs
     return build_shoebox(spec, mats)
 
 
@@ -132,7 +181,8 @@ def build_polygon(spec, rng):
     n = int(spec["extra"].get("facets", 12))
     rx, ry = spec["Lx"] / 2, spec["Ly"] / 2
     corners = _ngon(rx, ry, n, rx, ry)
-    mats = _mat(spec["a"], spec["scat"])
+    tilt = spec["extra"].get("tilt", "hard")
+    mats = _freq_mat(rng, spec["a"], tilt, spec["scat"])
     room = pra.Room.from_corners(corners, materials=mats, **_new_room())
     room.extrude(spec["Lz"], materials=mats)
     R = 0.5 * min(rx, ry)
@@ -143,7 +193,8 @@ def build_cylinder(spec, rng):
     n = int(spec["extra"].get("facets", 24))
     R = spec["Lx"] / 2
     corners = _ngon(R, R, n, R, R)
-    mats = _mat(spec["a"], spec["scat"])
+    tilt = spec["extra"].get("tilt", "hard")
+    mats = _freq_mat(rng, spec["a"], tilt, spec["scat"])
     room = pra.Room.from_corners(corners, materials=mats, **_new_room())
     room.extrude(spec["Lz"], materials=mats)
     return room, lambda rng: _disk_points(rng, R, R, 0.5 * R, spec["Lz"])
@@ -152,7 +203,7 @@ def build_cylinder(spec, rng):
 def build_room(spec, rng):
     g = spec["geometry"]
     if g == Geometry.SHOEBOX:
-        return build_shoebox(spec)
+        return build_shoebox(spec, rng=rng)
     if g == Geometry.PARTIAL:
         return build_partial(spec, rng)
     if g == Geometry.OPEN_FIELD:
@@ -168,6 +219,7 @@ def build_room(spec, rng):
 
 def simulate_rir(spec, rng):
     room, placer = build_room(spec, rng)
+    room.set_ray_tracing(receiver_radius=RECEIVER_RADIUS)
     src, mic = placer(rng)
     room.add_source(src)
     room.add_microphone(mic)
@@ -177,68 +229,99 @@ def simulate_rir(spec, rng):
     return ir / peak
 
 
-def _status(done, total, msg, start, skipped):
+def _status(done, total, start):
     el = time.time() - start
     eta = el / done * (total - done) if done else 0
     sys.stdout.write(f"\r  [{done:>5}/{total}] {done / total * 100:5.1f}%  "
-                     f"{msg:<15} {skipped} skip  {el:4.0f}s elapsed  ETA {eta:4.0f}s   ")
+                     f"{el:5.0f}s elapsed  ETA {eta:5.0f}s   ")
     sys.stdout.flush()
 
 
-def generate(n_per_type, rirs_per_room, seed):
-    rng = np.random.default_rng(seed)
+def _simulate_room(task):
+    """Worker: simulate one room (all its RIRs) and write the wavs. Rooms are
+    independent, so this is called in parallel across processes. Each room gets
+    its own RNG from an independent child seed, so parallelism does not change
+    (or correlate) the sampled rooms. Returns the manifest rows for this room."""
+    rt_idx, room_i, child_seed, rirs_per_room = task
+    rt = ROOM_TYPES[rt_idx]
+    rng = np.random.default_rng(child_seed)
+    spec = sample_room(rt, rng)
+    room_id = f"{rt.name}_{room_i:04d}"
+    rows = []
+    for j in range(rirs_per_room):
+        try:
+            ir = simulate_rir(spec, rng)
+        except Exception as e:
+            print(f"\n  SKIP {room_id} r{j}: {e}")
+            continue
+        fn = f"{room_id}_r{j}.wav"
+        sf.write(WAV_DIR / fn, ir, FS)
+        rows.append({"room_id": room_id, "label": rt.name,
+                     "geometry": rt.geometry.value,
+                     "path": str((WAV_DIR / fn).relative_to(ROOT))})
+    return rows
+
+
+def generate(n_per_type, rirs_per_room, seed, workers):
+    from multiprocessing import Pool
+
     WAV_DIR.mkdir(parents=True, exist_ok=True)
 
-    total = n_per_type * len(ROOM_TYPES) * rirs_per_room
-    start = time.time()
-    done = skipped = 0
-    rows = []
-    counts = {}
-
-    for rt in ROOM_TYPES:
-        made = 0
+    # one task per room, each with an independent child seed
+    seeds = np.random.SeedSequence(seed).spawn(n_per_type * len(ROOM_TYPES))
+    tasks, k = [], 0
+    for rt_idx in range(len(ROOM_TYPES)):
         for i in range(n_per_type):
-            spec = sample_room(rt, rng)
-            room_id = f"{rt.name}_{i:04d}"
-            for j in range(rirs_per_room):
-                try:
-                    ir = simulate_rir(spec, rng)
-                except Exception as e:
-                    skipped += 1
-                    sys.stdout.write("\n")
-                    print(f"  SKIP {room_id} r{j}: {e}")
-                    continue
-                fn = f"{room_id}_r{j}.wav"
-                sf.write(WAV_DIR / fn, ir, FS)
-                rows.append({"room_id": room_id, "label": rt.name,
-                             "geometry": rt.geometry.value,
-                             "path": str((WAV_DIR / fn).relative_to(ROOT))})
-                made += 1
+            tasks.append((rt_idx, i, seeds[k], rirs_per_room))
+            k += 1
+
+    total = len(tasks)
+    start = time.time()
+    all_rows, done = [], 0
+    print(f"generating {total} rooms x {rirs_per_room} RIR on {workers} workers "
+          f"(receiver_radius={RECEIVER_RADIUS})")
+
+    if workers == 1:  # serial path, handy for debugging / --smoke
+        for t in tasks:
+            all_rows.extend(_simulate_room(t))
+            done += 1
+            _status(done, total, start)
+    else:
+        with Pool(processes=workers) as pool:
+            for rows in pool.imap_unordered(_simulate_room, tasks, chunksize=4):
+                all_rows.extend(rows)
                 done += 1
-                _status(done, total, rt.name, start, skipped)
-        counts[rt.name] = made
+                _status(done, total, start)
     sys.stdout.write("\n")
 
     with open(MANIFEST, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["room_id", "label", "geometry", "path"])
         w.writeheader()
-        w.writerows(rows)
+        w.writerows(all_rows)
 
+    counts = {}
+    for r in all_rows:
+        counts[r["label"]] = counts.get(r["label"], 0) + 1
     print("\nper type:")
-    for name, c in counts.items():
-        print(f"  {name:16s} {c}")
-    print(f"\nwrote {len(rows)} RIRs ({skipped} skipped) in {time.time() - start:.0f}s -> {MANIFEST}")
+    for name in ROOM_TYPE_NAMES:
+        print(f"  {name:16s} {counts.get(name, 0)}")
+    skipped = total * rirs_per_room - len(all_rows)
+    print(f"\nwrote {len(all_rows)} RIRs ({skipped} skipped) in "
+          f"{time.time() - start:.0f}s -> {MANIFEST}")
 
 
 def main():
+    import os
     p = argparse.ArgumentParser()
     p.add_argument("--n-per-type", type=int, default=200)
     p.add_argument("--rirs-per-room", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1),
+                   help="parallel processes (default: cores-1); 1 = serial")
     p.add_argument("--smoke", action="store_true", help="tiny run (5 per type)")
     a = p.parse_args()
     n = 5 if a.smoke else a.n_per_type
-    generate(n, a.rirs_per_room, a.seed)
+    generate(n, a.rirs_per_room, a.seed, a.workers)
 
 
 if __name__ == "__main__":

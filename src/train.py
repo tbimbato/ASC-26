@@ -6,9 +6,14 @@ Two evaluations:
      no repeated-room leak here: this is already a room-independent estimate
      of in-sim performance.
   B) Sim-to-real: train on the synthetic set restricted to the classes that
-     overlap with the real BUT set (office, meeting_room, lecture_room,
-     staircase), test on the real held-out rooms. This is the honest
-     generalization number the project is actually about.
+     overlap with the real set (BUT + AIR + ACE: office, meeting_room,
+     lecture_room, staircase), test on the real held-out rooms. This is the
+     honest generalization number the project is actually about. Reported at
+     two levels: fine (functional labels as-is) and coarse (labels collapsed
+     to acoustic archetypes AFTER prediction, same model, same predictions).
+     The coarse map is defined a-priori from physics (a small office and a
+     small meeting room are the same acoustic object), not by peeking at the
+     confusion matrix. The fine-vs-coarse gap is part of the result.
 """
 
 import argparse
@@ -33,6 +38,17 @@ RESULTS.mkdir(exist_ok=True)
 
 FEATURES = ["rt60", "edt", "c80", "d50", "ts", "drr"]
 OVERLAP_CLASSES = ["office", "meeting_room", "lecture_room", "staircase"]
+
+# Acoustic archetypes: functional labels that describe the same physical
+# space collapse into one class. Office and small meeting room share size,
+# furniture and absorption; the features cannot (and should not) tell them
+# apart. Lecture room and staircase keep their own real acoustic signature.
+COARSE_MAP = {
+    "office":       "small_furnished",
+    "meeting_room": "small_furnished",
+    "lecture_room": "lecture_room",
+    "staircase":    "staircase",
+}
 
 
 def make_models() -> dict:
@@ -103,6 +119,21 @@ def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
                         "accuracy": round(acc, 4), "f1_macro": round(f1m, 4)})
         print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} f1_macro={f1m:.3f}")
         save_confusion(y_test, y_pred, le.classes_, model_name, eval_name)
+
+        # Coarse re-scoring: identical model, identical predictions, labels
+        # collapsed to acoustic archetypes after the fact. Measures how much
+        # of the fine error is intra-archetype (office vs meeting room).
+        coarse_labels = sorted(set(COARSE_MAP.values()))
+        cidx = {c: i for i, c in enumerate(coarse_labels)}
+        ct = [cidx[COARSE_MAP[le.classes_[i]]] for i in y_test]
+        cp = [cidx[COARSE_MAP[le.classes_[i]]] for i in y_pred]
+        acc_c = accuracy_score(ct, cp)
+        f1_c = f1_score(ct, cp, average="macro")
+        metrics.append({"eval": eval_name + "_coarse", "model": model_name,
+                        "accuracy": round(acc_c, 4), "f1_macro": round(f1_c, 4)})
+        print(f"[{eval_name}_coarse] {model_name:12s} "
+              f"acc={acc_c:.3f} f1_macro={f1_c:.3f}")
+        save_confusion(ct, cp, coarse_labels, model_name, eval_name + "_coarse")
 
 
 def main() -> None:

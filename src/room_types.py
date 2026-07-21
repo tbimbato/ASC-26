@@ -46,18 +46,31 @@ class RoomType:
     note: str = ""
 
 
-# DRAFT taxonomy. Validate ranges (and the exotic approximations) before generating.
+# Absorption ranges are anchored to published RT60 targets per room use, checked
+# with Sabine (RT60 = 0.161*V / (S*mean_alpha)) at the midpoint dimensions. They
+# are set from the acoustics literature, NOT fitted to the real BUT medians (the
+# real set is the held-out test, tuning to it would leak). Sources:
+#   [BB93]     Building Bulletin 93, "Acoustic Design of Schools", UK DfE 2015.
+#              Classrooms Tmf <= 0.6s (new build), lecture rooms up to ~1.0s.
+#   [S12.60]   ANSI/ASA S12.60-2010: unoccupied core learning space RT <= 0.6-0.7s.
+#   [Long]     M. Long, "Architectural Acoustics", 2nd ed., Academic Press 2014.
+#              RT tables by use: cellular office ~0.4-0.8s, conference ~0.6-1.0s.
+#   [Beranek]  L. Beranek, "Concert Halls and Opera Houses", 2nd ed., Springer
+#              2004: mid-freq RT ~1.8-2.1s occupied (multipurpose halls lower).
+#   [Kuttruff] H. Kuttruff, "Room Acoustics", 6th ed., CRC Press 2016 (Sabine).
+#   [Martellotta] F. Martellotta et al., church/cathedral acoustics: gothic RT ~4-10s.
+# DRAFT taxonomy. Validate the exotic approximations before generating.
 ROOM_TYPES: list[RoomType] = [
     # --- everyday rooms (the hard discrimination lives here) ---
     # names aligned to the BUT ReverbDB vocabulary (utils.ROOM_LABELS) so real
     # and synthetic manifests share labels directly, no remapping needed.
-    RoomType("office",       Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.20, 0.35), note="furnished, carpet"),
-    RoomType("meeting_room", Geometry.SHOEBOX, (5, 8),   (4, 7),   (2.7, 3.2), (0.15, 0.30), note="medium"),
-    RoomType("lecture_room", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), note="seating, mixed"),
-    RoomType("corridor",     Geometry.SHOEBOX, (15, 40), (1.5, 3), (2.5, 3.5), (0.05, 0.15), note="hard, long and narrow"),
-    RoomType("staircase",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), note="very reflective, tall"),
-    RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.10, 0.25), note="mixed"),
-    RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.02, 0.08), note="tiled, very live"),
+    RoomType("office",       Geometry.SHOEBOX, (3, 5),   (3, 5),   (2.7, 3.0), (0.12, 0.35), note="RT60 ~0.5-1.0s, treated to untreated [Long]"),
+    RoomType("meeting_room", Geometry.SHOEBOX, (5, 8),   (4, 7),   (2.7, 3.2), (0.10, 0.28), note="RT60 ~0.6-1.0s [Long]"),
+    RoomType("lecture_room", Geometry.SHOEBOX, (8, 20),  (6, 15),  (3.0, 6.0), (0.15, 0.30), note="RT60 ~0.8-1.0s [BB93, S12.60]"),
+    RoomType("corridor",     Geometry.SHOEBOX, (15, 40), (1.5, 3), (2.5, 3.5), (0.05, 0.15), note="RT60 ~1.0-2.0s, hard long narrow"),
+    RoomType("staircase",    Geometry.SHOEBOX, (3, 6),   (3, 6),   (8, 20),    (0.03, 0.10), note="RT60 ~2-4s, concrete, tall"),
+    RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.12, 0.28), note="RT60 ~1.5-2.2s, multipurpose [Beranek]"),
+    RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.04, 0.12), note="RT60 ~0.6-1.2s, tiled live"),
 
     # --- exotic / extreme (easy to classify, add range, testable vs OpenAIR reals) ---
     RoomType("cathedral",    Geometry.POLYGON, (25, 60), (12, 25), (12, 30),   (0.04, 0.10),

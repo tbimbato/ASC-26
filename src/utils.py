@@ -8,8 +8,12 @@ def extract_features(wav_path: str) -> dict:
     if ir.ndim > 1:
         ir = ir[:, 0]  # mono
 
-    # RT60 broadband (pra handles onset internally, T30 -> T60)
-    rt60 = pra.measure_rt60(ir, fs=fs, decay_db=30) * 2
+    # RT60 broadband. pra.measure_rt60 already extrapolates the T30 slope to
+    # a full -60dB decay internally (extrapolate_value_db is hardcoded there),
+    # so decay_db=30 controls the fit window, not the output scale. No extra
+    # *2 needed: verified against ACE Challenge ground-truth T60 (office room
+    # 502, Single/Crucif-chan1: our estimate 0.394s/0.358s vs GT 0.364s/0.310s).
+    rt60 = pra.measure_rt60(ir, fs=fs, decay_db=30)
 
     # Align to direct-sound onset: energy-based params (C80, D50, Ts, EDT, DRR)
     # must be computed from the direct arrival, not from the start of the file,

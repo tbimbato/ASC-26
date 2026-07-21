@@ -13,27 +13,35 @@ Key deps: `pyroomacoustics` (simulation + RT60), `soundfile`, `librosa`,
 
 ---
 
-## Phase 2 pipeline (current, under construction)
+## Phase 2 pipeline (current)
 
-Train on synthetic RIRs, test on real ones (sim-to-real).
+Train on synthetic RIRs, test on real ones (sim-to-real). Full run, in order:
 
 ```bash
-# 1. generate the synthetic dataset  (simulate.py: skeleton, not runnable yet)
+# 1. generate the synthetic dataset (long, run yourself; --n-per-type sets size)
 python src/simulate.py                 # -> data/sim/wav/*.wav + data/sim/manifest.csv
 
-# 2. compute features from any manifest (works now)
+# 2. features for the synthetic set
 python src/build_dataset.py --manifest data/sim/manifest.csv --out data/sim/features.csv
 
-# 3. benchmark classical models
-python src/train.py --features data/sim/features.csv   # -> results/
+# 3. assemble the real held-out test set (BUT + AIR-binaural + ACE-Single)
+python src/real_test.py                # -> data/real/manifest.csv  (--per-room caps RIRs/room)
+
+# 4. features for the real set
+python src/build_dataset.py --manifest data/real/manifest.csv --out data/real/features.csv
+
+# 5. benchmark: in-sim CV + sim-to-real, classical models
+python src/train.py                    # reads data/sim + data/real by default -> results/
 ```
 
-Before step 1 works, validate the room-type taxonomy, geometries and ranges in
-`src/room_types.py`, then implement the builders in `src/simulate.py`.
+`train.py` takes `--sim-features` / `--real-features` if you need non-default paths.
+Any change to `room_types.py` needs a re-run from step 1; any change to feature
+extraction (`utils.py`) needs a re-run of every `build_dataset.py` (steps 2 and 4).
 
-The real test set (BUT, MIT survey, OpenAIR) will be assembled by
-`src/real_test.py` into a manifest with the same columns, then fed through the
-same steps 2-3. Not built yet.
+Real datasets live in `data/raw/` (gitignored). `real_test.py` maps each dataset's
+filenames to the taxonomy and pools RIRs by physical room. MIT survey and the
+AIR/ACE bandlimited or multichannel captures are deliberately excluded, see
+`notes.md` and the `real_test.py` docstring for why.
 
 ### Manifest format
 Any CSV with a `path` column (to a WAV RIR) plus label columns carried through:
@@ -41,8 +49,15 @@ Any CSV with a `path` column (to a WAV RIR) plus label columns carried through:
 6 features to each row.
 
 ### Reading results
-- `stratified5fold`: rooms can appear in train and test. Optimistic upper bound.
-- `leave1roomout`: the test room is never seen in training. The honest number.
+`train.py` writes `results/metrics.csv` and confusion matrices for two evals:
+- `insim_5fold`: stratified 5-fold on the synthetic set (all 11 classes). Already
+  room-independent (one RIR per simulated room), so this is a clean in-sim number.
+- `sim2real`: train on synthetic (overlap classes only), test on the real held-out
+  rooms. The honest generalization number the project is about.
+- `sim2real_coarse`: same models, same predictions, labels collapsed to acoustic
+  archetypes (office + meeting_room -> small_furnished) after prediction. The
+  fine-vs-coarse gap measures how much error is intra-archetype. See the
+  "half functional, half acoustic" note in `notes.md`/`AGENTS.md`.
 - Report **per-class** metrics: the extreme classes (tank, forest, cathedral)
   are trivially separable and inflate the global score.
 

@@ -329,3 +329,44 @@ Conclusion for the report: 18 rooms is the practical ceiling of publicly
 available, functionally-labelled, full-dynamic-range RIR data. This is a
 structural property of the field (people record one room densely, not many rooms
 each once), not a gap in the search. State it as a declared limitation.
+
+### Results with v2 materials + 500/class, multi-seed CNN (22 July '26)
+
+Regenerated the synthetic set with v2 materials (frequency-dependent per-surface
+absorption, receiver_radius 0.8, gas_tank dropped, 10 classes x 500 rooms) and
+re-ran everything. CNN now with cosine LR decay and 5 seeds. This is the run the
+report is built on.
+
+Classical (5-fold in-sim, sim2real on the 17 overlap rooms):
+    eval                    RF     SVM    kNN    XGB
+    insim_5fold (10 cls)    0.82   0.80   0.80   0.81
+    insim_overlap (4 cls)   0.76   0.78   0.75   0.76
+    sim2real fine           0.39   0.33   0.39   0.34
+    sim2real coarse         0.79   0.73   0.75   0.72
+    sim2real coarse f1      0.70   0.64   0.67   0.62
+
+CNN (mean +/- std over seeds 42-46):
+    nn_insim (10 cls)       0.865 +/- 0.005
+    nn_insim_overlap (4)    0.854 +/- 0.009
+    nn_sim2real fine        0.328 +/- 0.023   (f1 0.27)
+    nn_sim2real coarse      0.621 +/- 0.028   (f1 0.42)
+
+Reading, now solid (multi-seed, not a lucky draw):
+  1. The CNN learns the synthetic set best of all (in-sim 0.85-0.87 vs classical
+     0.76-0.82) but transfers worst. Drop in-sim_overlap -> sim2real fine: CNN
+     0.85 -> 0.33 = 0.53, RF 0.76 -> 0.39 = 0.37. More capacity, more room to fit
+     the simulator instead of the physics. Central hypothesis confirmed.
+  2. The v2 realistic materials helped the physical features and NOT the net:
+     RF coarse 0.70 -> 0.79 between v1 and v2 materials, CNN coarse 0.72 -> 0.62.
+     Making the sim more physical rewards the model that reads physics.
+  3. The knockout is the coarse f1: CNN 0.42 vs RF 0.70. The CNN's acc-f1 gap
+     (0.62 vs 0.42) means it collapses onto the majority archetype under domain
+     shift. The majority-class baseline (small_furnished = 10 of 17 rooms) is
+     0.59, so CNN coarse accuracy 0.62 barely clears "always guess the biggest
+     class", while RF at 0.79 genuinely separates the archetypes.
+
+Caveats for the writeup (do not drop): 17 real overlap rooms / 67 RIRs, so the
+fine numbers are noisy and a single real test distribution is all we have. But
+the coarse gap (CNN 0.62 vs classical mean ~0.75) is wider than the seed std, so
+it holds. Not claiming the net is bad, claiming it is less robust to sim-to-real
+and less interpretable, which is exactly the thesis.

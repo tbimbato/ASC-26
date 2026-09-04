@@ -1,15 +1,13 @@
 """Generate a synthetic, balanced, labelled RIR dataset with pyroomacoustics.
 
-Training data for ASC-26. Real datasets (BUT, MIT survey, OpenAIR) are kept as
-a held-out test set (sim-to-real) and handled separately in real_test.py.
-(real ds are not downloaded yet at this stage!)
+Training data for ASC-26. The real corpora (BUT, AIR, ACE) are the held-out test
+set and are assembled separately in real_test.py.
 
 One builder per geometry kind (shoebox, polygon, cylinder, partial, open_field).
-v2 materials: absorption is frequency-dependent (a coefficient per octave band,
-shaped by the room type's `tilt`) and, for shoebox rooms, drawn per surface
-(floor, ceiling and the four walls differ), around the type's mean. This
-replaces v1's single flat coefficient per room, which produced unnaturally
-uniform, "dry" decays. Scattering is kept for the diffuse/exotic cases.
+Absorption is frequency-dependent, a coefficient per octave band shaped by the
+room type's `tilt`, and for shoebox rooms drawn per surface around the type's
+mean so no box is perfectly uniform. Scattering is kept for the diffuse and
+exotic cases.
 
     python src/simulate.py --smoke            # tiny run to sanity-check
     python src/simulate.py --n-per-type 300   # full run
@@ -36,13 +34,10 @@ FS = 16000        # match real test sets (BUT is 16 kHz)
 MAX_ORDER = 3     # image-source order; ray tracing carries the late tail
 MIN_SRC_MIC_DIST = 1.0
 MARGIN = 0.6      # keep sources/mics away from surfaces (m)
-# Ray-tracing receiver sphere. The auto ray count scales ~1/radius^2, so a
-# larger sphere means far fewer rays. Was 0.5 m (pyroomacoustics default).
-# Raised to 0.8 m: ~2.3x faster on the slow rooms (large hall 11.5s->5.1s,
-# cathedral 39s->16s) while the 6 features shift less than the room-to-room
-# variance. Smears arrivals by ~2.3 ms, still under the 2.5 ms DRR direct
-# window, so the direct sound (and the CNN's early-reflection structure) is
-# better preserved than at 1.2 m. Conservative fidelity/speed balance.
+# Ray-tracing receiver sphere. The automatic ray count scales ~1/radius^2, so a
+# larger sphere is much cheaper on the big rooms. At 0.8 m the six features move
+# less than the room-to-room variance, and the ~2.3 ms of arrival smearing stays
+# under the 2.5 ms DRR direct window.
 RECEIVER_RADIUS = 0.8
 
 # Octave band centers for frequency-dependent materials (up to fs/2 = 8 kHz).
@@ -281,7 +276,7 @@ def generate(n_per_type, rirs_per_room, seed, workers):
     print(f"generating {total} rooms x {rirs_per_room} RIR on {workers} workers "
           f"(receiver_radius={RECEIVER_RADIUS})")
 
-    if workers == 1:  # serial path, handy for debugging / --smoke
+    if workers == 1:  # serial path, for debugging and --smoke
         for t in tasks:
             all_rows.extend(_simulate_room(t))
             done += 1

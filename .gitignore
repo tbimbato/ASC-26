@@ -1,5 +1,4 @@
 papers/
-acoustic-space-classification/data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
 data/raw/BUT_ReverbDB_rel_19_06_RIR-Only/
 data/raw/
 data/processed/
@@ -325,7 +324,7 @@ TSWLatexianTemp*
 __pycache__/
 *.pyc
 
-# AI / agent files — stay local, never push
+# AI / agent files - stay local, never push
 AGENTS.md
 **/AGENTS.md
 CLAUDE.md
@@ -342,3 +341,10 @@ data/sim/
 
 # private report drafts
 report/
+
+# temp change log (local only)
+edit.md
+
+# internal working docs, not part of the published record
+review_findings.md
+sim2real_diagram.svg

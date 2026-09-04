@@ -28,7 +28,7 @@ def build(manifest: Path, out: Path) -> None:
     records = []
     for k, (_, row) in enumerate(df.iterrows(), 1):
         try:
-            feats = extract_features(row["path"])
+            feats = extract_features(str(ROOT / row["path"]))
         except Exception as e:
             sys.stdout.write("\n")
             print(f"SKIP {row['path']}: {e}")
@@ -44,6 +44,9 @@ def build(manifest: Path, out: Path) -> None:
             sys.stdout.flush()
     sys.stdout.write("\n")
 
+    if len(records) < total:
+        raise SystemExit(f"{total - len(records)} of {total} RIRs failed to read; "
+                         "fix the manifest rather than training on a short set")
     out.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(records).to_csv(out, index=False)
     print(f"Done: {len(records)} rows -> {out}")

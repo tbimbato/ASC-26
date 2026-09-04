@@ -13,7 +13,7 @@ Key deps: `pyroomacoustics` (simulation + RT60), `soundfile`, `librosa`,
 
 ---
 
-## Phase 2 pipeline (current)
+## Phase 2 pipeline
 
 Train on synthetic RIRs, test on real ones (sim-to-real). Full run, in order:
 
@@ -32,13 +32,25 @@ python src/build_dataset.py --manifest data/real/manifest.csv --out data/real/fe
 
 # 5. benchmark: in-sim CV + sim-to-real, classical models
 python src/train.py                    # reads data/sim + data/real by default -> results/
+
+# 6. neural baselines: same protocol, 4 nets (CNN at 3 capacities + pretrained ResNet18)
+python src/nn/train_nn.py    # full sweep, hours; name models to run a subset,
+                            # e.g. python src/nn/train_nn.py CNN-24k CNN-94k
 ```
+
+`train_nn.py` merges per model into `results/metrics_nn.csv`: re-running a
+(model, seed) pair replaces only its rows, and a pair already present is skipped, so
+an interrupted sweep resumes. ResNet18 downloads its ImageNet weights once (~45 MB,
+cached by torchvision).
 
 `train.py` takes `--sim-features` / `--real-features` if you need non-default paths.
 Any change to `room_types.py` needs a re-run from step 1; any change to feature
 extraction (`utils.py`) needs a re-run of every `build_dataset.py` (steps 2 and 4).
 
-Real datasets live in `data/raw/` (gitignored). `real_test.py` maps each dataset's
+Real datasets are downloaded by hand into `data/raw/` (gitignored), and `real_test.py`
+expects these folder names: `BUT_ReverbDB_rel_19_06_RIR-Only/`, `AIR_1_4/AIR_wav_files/`,
+and any directory starting with `ACE` containing a `Single/` subtree. It exits with an
+error if one is missing. `real_test.py` maps each dataset's
 filenames to the taxonomy and pools RIRs by physical room. MIT survey and the
 AIR/ACE bandlimited or multichannel captures are deliberately excluded, see
 `notes.md` and the `real_test.py` docstring for why.
@@ -53,13 +65,21 @@ Any CSV with a `path` column (to a WAV RIR) plus label columns carried through:
 - `insim_5fold`: stratified 5-fold on the synthetic set (all 10 classes). Already
   room-independent (one RIR per simulated room), so this is a clean in-sim number.
 - `sim2real`: train on synthetic (overlap classes only), test on the real held-out
-  rooms. The honest generalization number the project is about.
+  rooms. This is the generalization number the project is about.
 - `sim2real_coarse`: same models, same predictions, labels collapsed to acoustic
   archetypes (office + meeting_room -> small_furnished) after prediction. The
-  fine-vs-coarse gap measures how much error is intra-archetype. See the
-  "half functional, half acoustic" note in `notes.md`/`AGENTS.md`.
-- Report **per-class** metrics: the extreme classes (tank, forest, cathedral)
-  are trivially separable and inflate the global score.
+  fine-vs-coarse gap measures how much error is intra-archetype.
+- `insim_overlap_5fold`: in-sim on the 4 overlap classes only, so the in-sim to
+  sim2real drop is computed on the same task for both model families.
+- `abl_rt60_only` and `abl_no_<feature>`: leave-one-feature-out and RT60-alone, fine
+  and coarse. These are most of the rows in `metrics.csv`.
+
+`train_nn.py` writes `results/metrics_nn.csv` with the `nn_` prefixed counterparts
+(`nn_insim`, `nn_insim_overlap`, `nn_sim2real[_coarse][_adabn]`) plus per-sample
+predictions on the real set in `results/preds_nn.csv`. Rows scored on the real set
+also carry `baseline`, `ci_low`, `ci_high` and `acc_rooms`.
+- Report per-class metrics: the extreme classes (cathedral, forest, patio) are
+  trivially separable and inflate the global score.
 
 ---
 
@@ -69,3 +89,8 @@ Real-RIR classification on BUT ReverbDB. Findings and confusion matrices are in
 `results/phase1_but/`, the reasoning in `notes.md`. The phase-1 indexing script
 was removed in the pivot; phase 1 is kept as a documented result, not a runnable
 step.
+
+## archive/
+
+`archive/exploration_phase1.ipynb` is phase-1 material kept for the record. It reads
+paths that no current script writes and does not run against this pipeline.

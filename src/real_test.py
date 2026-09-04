@@ -17,22 +17,22 @@ and train.py treat it exactly like any other manifest.
                    scope). The *_Noise_* files in each position folder are
                    long babble/fan/ambient recordings for the denoising
                    challenge, not RIRs; only *_RIR.wav is used. Small by
-                   design (it's a characterisation benchmark, not a bulk
-                   corpus) but each room ships literature-grade ground-truth
-                   RT60/DRR, useful to sanity-check extract_features.
+                   design, a characterisation benchmark rather than a bulk
+                   corpus, but each room ships published ground-truth RT60/DRR,
+                   used here to sanity-check extract_features.
 
-Deliberately excluded, to keep the physical decay features (RT60, C80, DRR)
-honest:
+Excluded, to keep the physical decay features (RT60, C80, DRR) comparable
+across corpora:
   - MIT survey   : most IRs have too little dynamic range before the ambient
                    noise floor (median usable decay ~0.7s) to support a T30-style
-                   RT60 estimate. Perfectly valid for its own purpose (perceptual
-                   statistics of everyday reverb, Traer & McDermott PNAS 2016),
-                   but not for reliable RT60/C80/DRR estimation. Unusable here.
+                   RT60 estimate. Recorded for perceptual statistics of everyday
+                   reverb (Traer & McDermott, PNAS 2016), a purpose that does not
+                   require the decay range these features need.
   - AIR phone    : telephone-band (300-3400 Hz) recordings. The band limit
                    inflates C80 (removes low-freq reverb energy): a capture-bias
-                   confound we keep out of the main test set.
+                   confound, kept out of the main test set.
 
-The "room" is the grouping unit for honest evaluation: BUT, AIR and ACE
+The "room" is the grouping unit for evaluation: BUT, AIR and ACE
 contribute few rooms with several RIRs (capped at `per_room`; ACE positions
 1/2 of the same room are pooled as one room, not two). Everything not covered
 by the taxonomy is skipped.
@@ -165,7 +165,18 @@ def build(per_room: int, seed: int) -> None:
     print(f"\nwrote {len(rows)} RIRs from {len(rooms)} rooms -> {MANIFEST}")
 
 
+def check_corpora() -> None:
+    """The three corpora are downloaded by hand into data/raw. A missing or
+    renamed folder otherwise yields an empty manifest and a zero exit code."""
+    missing = [str(d) for d in (BUT_DIR, AIR_WAV_DIR) if not d.is_dir()]
+    if ACE_DIR is None:
+        missing.append(str(RAW / "ACE*"))
+    if missing:
+        raise SystemExit("missing corpora under data/raw:\n  " + "\n  ".join(missing))
+
+
 def main():
+    check_corpora()
     p = argparse.ArgumentParser()
     p.add_argument("--per-room", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)

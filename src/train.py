@@ -1,19 +1,17 @@
 """Benchmark classical classifiers on room-acoustic features.
 
 Two evaluations:
-  A) Stratified 5-fold CV on the synthetic set, all 11 classes. Each
+  A) Stratified 5-fold CV on the synthetic set, all 10 classes. Each
      synthetic room_id is a distinct simulated room sampled once, so there is
      no repeated-room leak here: this is already a room-independent estimate
      of in-sim performance.
   B) Sim-to-real: train on the synthetic set restricted to the classes that
      overlap with the real set (BUT + AIR + ACE: office, meeting_room,
-     lecture_room, staircase), test on the real held-out rooms. This is the
-     honest generalization number the project is actually about. Reported at
+     lecture_room, staircase), test on the real held-out rooms. Reported at
      two levels: fine (functional labels as-is) and coarse (labels collapsed
      to acoustic archetypes AFTER prediction, same model, same predictions).
-     The coarse map is defined a-priori from physics (a small office and a
-     small meeting room are the same acoustic object), not by peeking at the
-     confusion matrix. The fine-vs-coarse gap is part of the result.
+     The coarse map is defined a-priori from physics: a small office and a
+     small meeting room are the same acoustic object.
 """
 
 import argparse
@@ -22,6 +20,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (ConfusionMatrixDisplay, accuracy_score,
@@ -97,14 +96,57 @@ def run_cv(df: pd.DataFrame, eval_name: str, metrics: list,
         save_confusion(all_true, all_pred, le.classes_, model_name, eval_name)
 
 
+def majority_baseline(y) -> float:
+    """Accuracy of always predicting the most common class."""
+    y = np.asarray(y)
+    return np.bincount(y).max() / len(y)
+
+
+def room_bootstrap(y_true, y_pred, rooms, n_boot=5000, seed=0):
+    """95% CI on accuracy, resampling rooms rather than RIRs.
+
+    The several RIRs of one room are the same acoustic space measured at a few
+    positions, not independent draws, so a CI over the 67 samples is far too
+    narrow. There are 17 rooms."""
+    y_true, y_pred, rooms = np.asarray(y_true), np.asarray(y_pred), np.asarray(rooms)
+    uniq = np.unique(rooms)
+    rng = np.random.default_rng(seed)
+    accs = []
+    for _ in range(n_boot):
+        picked = rng.choice(uniq, size=len(uniq), replace=True)
+        idx = np.concatenate([np.flatnonzero(rooms == r) for r in picked])
+        accs.append((y_true[idx] == y_pred[idx]).mean())
+    return np.percentile(accs, 2.5), np.percentile(accs, 97.5)
+
+
+def room_level_accuracy(y_true, y_pred, rooms) -> float:
+    """One vote per room, by majority of its RIRs."""
+    y_true, y_pred, rooms = np.asarray(y_true), np.asarray(y_pred), np.asarray(rooms)
+    hits = 0
+    for r in np.unique(rooms):
+        m = rooms == r
+        vote = np.bincount(y_pred[m]).argmax()
+        hits += vote == y_true[m][0]
+    return hits / len(np.unique(rooms))
+
+
 def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
-                metrics: list, feature_cols: list[str]) -> None:
+                metrics: list, feature_cols: list[str], save_cm: bool = True) -> None:
     le = LabelEncoder()
     le.fit(train_df["label"].values)
     y_train = le.transform(train_df["label"].values)
     y_test = le.transform(test_df["label"].values)
     X_train_raw = train_df[feature_cols].values
     X_test_raw = test_df[feature_cols].values
+    rooms = test_df["room_id"].values
+
+    coarse_labels = sorted(set(COARSE_MAP.values()))
+    cidx = {c: i for i, c in enumerate(coarse_labels)}
+    ct = [cidx[COARSE_MAP[le.classes_[i]]] for i in y_test]
+
+    print(f"  baseline (majority class): fine {majority_baseline(y_test):.3f}  "
+          f"coarse {majority_baseline(ct):.3f}   [{len(np.unique(rooms))} rooms, "
+          f"{len(y_test)} RIRs]")
 
     for model_name, model in make_models().items():
         scaler = StandardScaler()
@@ -115,25 +157,34 @@ def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
 
         acc = accuracy_score(y_test, y_pred)
         f1m = f1_score(y_test, y_pred, average="macro")
+        lo, hi = room_bootstrap(y_test, y_pred, rooms)
         metrics.append({"eval": eval_name, "model": model_name,
-                        "accuracy": round(acc, 4), "f1_macro": round(f1m, 4)})
-        print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} f1_macro={f1m:.3f}")
-        save_confusion(y_test, y_pred, le.classes_, model_name, eval_name)
+                        "accuracy": round(acc, 4), "f1_macro": round(f1m, 4),
+                        "baseline": round(majority_baseline(y_test), 4),
+                        "ci_low": round(lo, 4), "ci_high": round(hi, 4),
+                        "acc_rooms": round(room_level_accuracy(y_test, y_pred, rooms), 4)})
+        print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} [{lo:.3f},{hi:.3f}] "
+              f"f1={f1m:.3f} rooms={room_level_accuracy(y_test, y_pred, rooms):.3f}")
+        if save_cm:
+            save_confusion(y_test, y_pred, le.classes_, model_name, eval_name)
 
         # Coarse re-scoring: identical model, identical predictions, labels
         # collapsed to acoustic archetypes after the fact. Measures how much
         # of the fine error is intra-archetype (office vs meeting room).
-        coarse_labels = sorted(set(COARSE_MAP.values()))
-        cidx = {c: i for i, c in enumerate(coarse_labels)}
-        ct = [cidx[COARSE_MAP[le.classes_[i]]] for i in y_test]
         cp = [cidx[COARSE_MAP[le.classes_[i]]] for i in y_pred]
         acc_c = accuracy_score(ct, cp)
         f1_c = f1_score(ct, cp, average="macro")
+        lo_c, hi_c = room_bootstrap(ct, cp, rooms)
         metrics.append({"eval": eval_name + "_coarse", "model": model_name,
-                        "accuracy": round(acc_c, 4), "f1_macro": round(f1_c, 4)})
-        print(f"[{eval_name}_coarse] {model_name:12s} "
-              f"acc={acc_c:.3f} f1_macro={f1_c:.3f}")
-        save_confusion(ct, cp, coarse_labels, model_name, eval_name + "_coarse")
+                        "accuracy": round(acc_c, 4), "f1_macro": round(f1_c, 4),
+                        "baseline": round(majority_baseline(ct), 4),
+                        "ci_low": round(lo_c, 4), "ci_high": round(hi_c, 4),
+                        "acc_rooms": round(room_level_accuracy(ct, cp, rooms), 4)})
+        print(f"[{eval_name}_coarse] {model_name:12s} acc={acc_c:.3f} "
+              f"[{lo_c:.3f},{hi_c:.3f}] f1={f1_c:.3f} "
+              f"rooms={room_level_accuracy(ct, cp, rooms):.3f}")
+        if save_cm:
+            save_confusion(ct, cp, coarse_labels, model_name, eval_name + "_coarse")
 
 
 def main() -> None:
@@ -156,13 +207,22 @@ def main() -> None:
     real_overlap = real[real["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
 
     # in-sim on the same 4 overlap classes, so the in-sim -> sim2real drop is
-    # computed on the same task (the 11-class number is not comparable)
+    # computed on the same task (the 10-class number is not comparable)
     run_cv(sim_overlap, "insim_overlap_5fold", metrics, FEATURES)
     print(f"\nSim-to-real on classes {OVERLAP_CLASSES}: "
           f"{len(sim_overlap)} synthetic train rooms, "
           f"{real_overlap['room_id'].nunique()} real test rooms "
           f"({len(real_overlap)} samples)")
     run_holdout(sim_overlap, real_overlap, "sim2real", metrics, FEATURES)
+
+    # Which of the six actually carry the transfer, and whether one is enough.
+    print("\nfeature ablation")
+    run_holdout(sim_overlap, real_overlap, "abl_rt60_only", metrics, ["rt60"],
+                save_cm=False)
+    for f in FEATURES:
+        rest = [c for c in FEATURES if c != f]
+        run_holdout(sim_overlap, real_overlap, f"abl_no_{f}", metrics, rest,
+                    save_cm=False)
 
     out = pd.DataFrame(metrics)
     out.to_csv(RESULTS / "metrics.csv", index=False)

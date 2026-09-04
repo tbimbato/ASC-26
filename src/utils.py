@@ -1,12 +1,33 @@
+"""Room-acoustic parameters from a room impulse response.
+
+Six broadband ISO 3382 descriptors per RIR: RT60, EDT, C80, D50, Ts, DRR.
+Every file is brought to TARGET_FS first, so the 16 kHz and 48 kHz corpora are
+described over the same band.
+"""
+
+from math import gcd
+
 import numpy as np
 import soundfile as sf
 import pyroomacoustics as pra
+from scipy.signal import resample_poly
+
+TARGET_FS = 16000  # same rate as the neural pipeline, nn/ingest.py
 
 
 def extract_features(wav_path: str) -> dict:
     ir, fs = sf.read(wav_path)
     if ir.ndim > 1:
         ir = ir[:, 0]  # mono
+
+    # The real set mixes 16 kHz (BUT) and 48 kHz (AIR, ACE) while the sim set is
+    # all 16 kHz. All six features are broadband, so without this the 48 kHz
+    # files contribute energy above 8 kHz that no training file can contain.
+    # Also keeps this pipeline on the same signal as nn/ingest.py.
+    if fs != TARGET_FS:
+        g = gcd(fs, TARGET_FS)
+        ir = resample_poly(ir, TARGET_FS // g, fs // g)
+        fs = TARGET_FS
 
     # RT60 broadband. pra.measure_rt60 already extrapolates the T30 slope to
     # a full -60dB decay internally (extrapolate_value_db is hardcoded there),
@@ -26,7 +47,11 @@ def extract_features(wav_path: str) -> dict:
 
     ms = int(fs / 1000)  # samples per ms
 
-    c80 = 10 * np.log10(np.sum(h2[:80 * ms]) / (np.sum(h2[80 * ms:]) + 1e-12))
+    # C80 needs energy on both sides of the 80 ms split. Some outdoor_patio IRs
+    # are shorter than that, leaving an empty denominator; NaN rather than the
+    # +120 dB an epsilon guard would produce.
+    late = np.sum(h2[80 * ms:])
+    c80 = 10 * np.log10(np.sum(h2[:80 * ms]) / late) if late > 0 else np.nan
     d50 = np.sum(h2[:50 * ms]) / (total_energy + 1e-12)
     ts = np.sum(h2 * np.arange(len(h2))) / (total_energy * fs + 1e-12)
 
@@ -59,7 +84,7 @@ ROOM_LABELS = {
     "VUT_FIT_L212":                      "office",
     "VUT_FIT_Q301":                      "office",
     "VUT_FIT_L227":                      "staircase",
-    "VUT_FIT_R112":                      "hotel_room",
+    "Hotel_SkalskyDvur_Room112":         "hotel_room",
     "VUT_FIT_E112":                      "lecture_room",
     "VUT_FIT_D105":                      "lecture_room",
 }

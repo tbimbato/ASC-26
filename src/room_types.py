@@ -1,9 +1,8 @@
 """Room-type taxonomy and parameter distributions for synthetic RIR generation.
 
-DRAFT. Ranges need an architect's eye (Tommi) before wiring the simulation.
 simulate.py samples from these and dispatches to a geometry builder per type.
 
-Geometry kinds (pyroomacoustics is not limited to rectangular boxes):
+Geometry kinds:
   - shoebox     : rectangular box
   - polygon     : arbitrary floor plan extruded to a height (L-shapes, faceted
                   cathedral). Curves are approximated with flat facets.
@@ -22,10 +21,9 @@ Dimensions in meters. Interpretation of (x, y, z) depends on geometry:
 frequency-dependent, per-surface materials. `extra` holds geometry-specific
 knobs, including `tilt`, the spectral shape of the absorption:
   - "soft" : absorption rises with frequency (carpet, seating, curtains, people;
-             offices, meeting/lecture rooms, halls). This is what a flat single
-             coefficient was missing and why v1 IRs came out too "dry".
-  - "hard" : nearly flat, slightly more at low frequency (concrete, tile, steel,
-             stone; staircase, corridor, bathroom, cathedral, gas tank).
+             offices, meeting/lecture rooms, halls).
+  - "hard" : nearly flat, slightly more at low frequency (concrete, tile, stone;
+             staircase, corridor, bathroom, cathedral).
   - "neutral": mild rise (default, mixed surfaces).
 """
 
@@ -66,7 +64,6 @@ class RoomType:
 #              2004: mid-freq RT ~1.8-2.1s occupied (multipurpose halls lower).
 #   [Kuttruff] H. Kuttruff, "Room Acoustics", 6th ed., CRC Press 2016 (Sabine).
 #   [Martellotta] F. Martellotta et al., church/cathedral acoustics: gothic RT ~4-10s.
-# DRAFT taxonomy. Validate the exotic approximations before generating.
 ROOM_TYPES: list[RoomType] = [
     # --- everyday rooms (the hard discrimination lives here) ---
     # names aligned to the BUT ReverbDB vocabulary (utils.ROOM_LABELS) so real
@@ -79,12 +76,9 @@ ROOM_TYPES: list[RoomType] = [
     RoomType("large_hall",   Geometry.SHOEBOX, (20, 40), (15, 30), (8, 15),    (0.12, 0.28), extra={"tilt": "soft"}, note="RT60 ~1.5-2.2s, multipurpose [Beranek]"),
     RoomType("bathroom",     Geometry.SHOEBOX, (2, 4),   (2, 4),   (2.4, 2.8), (0.04, 0.12), extra={"tilt": "hard"}, note="RT60 ~0.6-1.2s, tiled live"),
 
-    # --- exotic / extreme (easy to classify, add range, testable vs OpenAIR reals) ---
+    # --- exotic / extreme: wide acoustic range, no counterpart in the real set ---
     RoomType("cathedral",    Geometry.POLYGON, (25, 60), (12, 25), (12, 30),   (0.04, 0.10),
              extra={"facets": 16, "vaulted": True, "tilt": "hard"}, note="stone, huge, very long RT60"),
-    # gas_tank removed: no real counterpart in the held-out set (BUT+AIR+ACE),
-    # slowest class to simulate, and thematically a novelty. Cathedral already
-    # covers the extreme long-reverb end. The CYLINDER builder is kept for reuse.
     RoomType("outdoor_patio", Geometry.PARTIAL, (4, 10),  (3, 8),   (2.5, 4.0), (0.15, 0.30),
              extra={"open_walls": 2, "ground_absorption": (0.2, 0.5), "tilt": "neutral"}, note="walls on 1-2 sides + open air"),
     RoomType("outdoor_forest", Geometry.OPEN_FIELD, (30, 80), (30, 80), (15, 30), (0.85, 0.98),

@@ -20,9 +20,9 @@ classifiers.
 The catch is that seventeen rooms is not enough to prove any of it. An exact McNemar
 test on those rooms gives p = 0.125, well short of significance, and a survey of 20
 public corpora found that seventeen is close to all the labelled real rooms that exist
-to test on. So: a hand-built physical description of a room does transfer from
-simulation to reality better than a learned one here, and this test set is too small to
-establish it.
+to test on. Every classical model came out above every neural run, but on seventeen
+rooms that is a direction observed in one small sample, not a demonstrated property of
+the two approaches.
 
 ![Simulated and real impulse response of a lecture room](results/sim_vs_real.png)
 
@@ -38,7 +38,8 @@ A room-acoustics simulator (`pyroomacoustics`) generates 5,000 labelled RIRs ove
 families. Classifiers are fitted on this synthetic set and tested on 19 real rooms
 assembled from BUT ReverbDB, Aachen AIR and the ACE Challenge. Evaluation is reported
 at two levels: fine (functional labels as recorded) and coarse (acoustic archetypes,
-collapsed after prediction, defined a priori). The four classes present in both domains
+collapsed after prediction). The coarse map was committed on 21 July 2026, six weeks
+before the results reported here, so it could not have been chosen to fit them. The four classes present in both domains
 are office, meeting room, lecture room and stairwell; the real subset restricted to
 these is 17 rooms, 67 RIRs.
 
@@ -56,8 +57,11 @@ to 0.761 and from 15 to 14 rooms, still above all 20 neural runs.
 
 ## Results
 
-Coarse sim-to-real. Confidence intervals are 95%, bootstrapped over rooms rather than
-RIRs; room-level accuracy is one majority vote per room. The neural rows are means over
+Coarse sim-to-real. Accuracy and its interval are per RIR over the 67 recordings, the
+interval bootstrapped over the 17 rooms rather than over the RIRs. The Rooms column is a
+separate quantity, one majority vote per room, which is why the baseline row reads 0.567
+per RIR and 10 of 17 per room: 38 of the 67 recordings belong to the largest class but 10
+of the 17 rooms do. The neural rows are means over
 five seeds. The classical rows are single fits, which costs nothing for three of them:
 kNN and SVC have no random component and XGBoost at library defaults never resamples,
 measured at 0.806 with zero spread over five seeds. RandomForest is the exception at
@@ -104,16 +108,24 @@ cannot resolve differences of this size. `src/significance.py` reproduces the te
 At the fine level nothing works. The baseline is 0.358 and the best of the eight models
 is XGBoost at 0.418, with an interval of 0.206 to 0.644 that contains the baseline. The
 single highest fine accuracy anywhere in the study, ablations included, is 0.463, from
-RandomForest given RT60 and nothing else. Office and meeting room cannot be told apart
-from the acoustics.
+RandomForest given RT60 and nothing else. Office and meeting room are not separable in
+this data, which is what the coarse level exists to work around.
 
-Three controls:
+Four controls:
 
 Capacity: accuracy is flat from 24k to 11M parameters and under ImageNet pretraining,
 within the seed spread.
 
 Domain normalization: recomputing BatchNorm statistics on the unlabelled real set
 (AdaBN) lowers coarse accuracy for all four architectures.
+
+Corpus: the result is not carried by one of the three sources, nor by the one feature
+that shifts between them. Dropping DRR costs between 0.000 and 0.030 coarse accuracy
+depending on the model, so the 8 dB corpus offset in that feature is not what the
+classifiers are reading. Scored separately by source,
+XGBoost gets 0.829 on the 7 BUT rooms, 0.650 on the 4 from AIR and 1.000 on the 6 from
+ACE, and the other three models follow the same pattern. ACE is the easiest because it
+contributes no stairwells, which is the class both arms fail on.
 
 Feature redundancy: the six parameters are integrals of the same energy decay curve, and
 on the real set their pairwise |r| spans 0.53 to 1.00. RT60 alone matches all six on
@@ -130,29 +142,50 @@ something the others do not, and it is also the one contaminated by microphone d
 
 ## Limitations
 
-- Seventeen rooms is the binding constraint. Nothing here reaches significance because
-  of it, and a survey of 20 public corpora (notes.md) found no larger labelled set to
-  move to. Every conclusion below is a direction, not a measurement.
-- File length is a cue the networks can read and it does not survive the crossing.
-  Simulated files run about 1.9 times their RT60, real recordings about 1.3 times theirs;
-  a classifier given nothing but file length scores 0.569 in-sim and 0.343 on the real
-  set, under the 0.358 baseline. Whether the networks lean on it was not measured, so it
-  remains a live alternative explanation for their failure.
-- The 0.806 at the top of the table is a maximum over four models, on the same 17 rooms
-  that also carry 56 ablation evaluations with no correction for multiplicity.
-- The simulator is unvalidated in two specific ways: source and microphone are drawn
-  uniformly in the room volume rather than at ear and loudspeaker heights, which makes
-  the simulated DRR distribution partly an artefact of the sampler, and the spectral
-  shape of the absorption is three hand-written tilts rather than coefficients from a
-  materials table.
+Seven things stand between this and a result you could rely on. None of them was fixed,
+and each says what fixing it would take.
+
+- Seventeen rooms is not enough to prove anything. A survey of 20 public corpora found
+  no larger labelled set to move to, so the only fix is to go out and measure more rooms.
+  That was not done.
+- It is not established whether the networks failed at the task or at this simulator. In
+  the synthetic rooms the source and microphone are dropped anywhere in the air rather
+  than at speaker and ear height, the tail decays into digital silence where a real
+  recording sits on a noise floor, and the frequency shape of the absorption is three
+  tilts written by hand rather than measured materials. A network reads the whole
+  picture, so it sees all of that; a slope fitted to the decay does not. Rebuilding the
+  simulator and retraining would separate the two explanations. That was not done.
+- The networks were never tuned. Each architecture got one learning rate and one epoch
+  budget, read off its validation curve, and no search was run. What the data supports is
+  that these four networks did not transfer, not that networks transfer worse.
+- The 0.806 at the top of the table is the best of four models, picked on the same
+  seventeen rooms it is then reported on, alongside 56 ablation evaluations with no
+  correction for multiplicity. The clean way is to fix the model before looking at the
+  test set, which is no longer possible here.
+- The six parameters are effectively one. RT60 alone matches all six on coarse accuracy,
+  0.757 against 0.757, and their pairwise correlation on the real set runs from 0.53 to
+  1.00 with two of them identical to two decimals. That is a result rather than a defect,
+  but it means "six acoustic parameters" oversells what the classifier is reading.
 - The parameters are not computed the way ISO 3382 defines them. The standard specifies
-  each one per octave band; here each is a single number over the whole spectrum. EDT is taken from the first point where the
-  decay curve crosses -10 dB, where the standard fits a line through that whole range,
-  which leaves it sensitive to one strong early reflection. Only RT60, the one the
-  ablation shows is doing the work, was checked against published ground truth: on the
-  two measurements of one ACE room it came out 8% and 15% high.
-- No hyperparameter search was run on the networks, so a tuned one could transfer better
-  than these do.
+  each one per octave band; here each is a single number over the whole spectrum. EDT is
+  taken from the first point where the decay curve crosses -10 dB, where the standard
+  fits a line through that whole range, which leaves it sensitive to one strong early
+  reflection. Only RT60, the one the ablation shows is doing the work, was checked
+  against published ground truth: on the two measurements of one ACE room it came out 8%
+  and 15% high. Reimplementing all six to the standard would change every number here and
+  was not done.
+- Whether the networks leaned on file length was not measured. Simulated files run about
+  1.9 times their RT60, real recordings about 1.3 times theirs, and a classifier given
+  nothing but file length scores 0.569 in-sim and 0.343 on the real set, under the 0.358
+  baseline. So the cue is strong in training and worse than guessing at test time.
+  Cropping every file to a common length and retraining would settle whether the networks
+  used it. That was not done.
+
+One further imbalance, partly checked. The 17 rooms are 9 from BUT, 6 from ACE and 4 from
+AIR, with median RT60 of 1.10, 0.47 and 0.77 s, and the classes are not spread evenly:
+ACE has no stairwells, and the stairwell class is two rooms in total. The per-corpus
+scores above show the result is not carried by one source, but two rooms is two rooms.
+Rooms carry 2 to 5 RIRs each, so a room-level vote can turn on one measurement.
 
 ## Related work
 
@@ -232,10 +265,12 @@ predictions on the real set in `results/preds.csv` and `results/preds_nn.csv`. S
 
 Complete, September 2026, no further work planned.
 
-What stands: at the coarse level the six parameters beat the majority baseline on rooms
-they were never trained on and the networks do not, every one of the 4 classical models
-lands above every one of the 20 neural runs, and none of it reaches significance on 17
-rooms.
+What stands, scoped to what was actually run: at the coarse level these four classical
+models on these six parameters beat the majority baseline on rooms they were never
+trained on, and these four architectures, untuned and trained on this simulator, do not.
+Every one of the 4 classical models lands above every one of the 20 neural runs, and none
+of it reaches significance on 17 rooms. The 0.806 in the table is the best of the four,
+picked on the same test set.
 
 What was withdrawn: earlier versions reported that the drop from simulation to reality
 grew with network size. That came from running each network once. Run five times each,

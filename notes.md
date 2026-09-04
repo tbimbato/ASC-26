@@ -58,9 +58,9 @@ dynamic range for a T30-style fit).
 
 Swept the Graphi07 catalogue (20 corpora) plus MP-RIR. 11 are single-room, 3 are already
 in use, MIT is out on dynamic range, REVERB and GTU-RIR have rooms but no functional
-labels, the rest are off-taxonomy or extreme-only. Roughly 19 rooms is the practical
-ceiling of public, functionally-labelled, full-dynamic-range RIR data. Structural
-property of the field, not a gap in the search.
+labels, the rest are off-taxonomy or extreme-only. About 19 rooms is all there is: public
+RIRs that carry a functional label and enough decay range to measure. There is no bigger
+test set to find, the search was not shallow.
 
 ### Pre-registered architecture sweep (31 Jul '26)
 
@@ -95,17 +95,34 @@ Coarse sim-to-real, 17 rooms / 67 RIRs, CI bootstrapped over rooms:
 - The six features are one. Pairwise |r| on the real set spans 0.53-1.00, and 0.79-1.00
   among the five excluding DRR, EDT and Ts at r = 1.00: they are integrals of the same
   decay curve. RT60 alone equals all six on coarse accuracy (0.757), and reaches 12-14
-  of 17 rooms against 15 for the six together. DRR is the only weakly redundant one,
-  and is confounded by acquisition: median -7.9 dB on BUT against 0.1 and 0.2 on ACE
-  and AIR, tracking source-microphone distance rather than the room.
+  of 17 rooms against 15 for the six together. DRR is the only one carrying much the
+  others do not, and it is contaminated: median -7.9 dB on BUT against 0.1 and 0.2 on
+  ACE and AIR, an 8 dB corpus offset that is microphone distance, not room.
 
-Survives: trained only on simulation, the six parameters assign the acoustic archetype of
-15 of 17 unseen real rooms, and 20 neural runs on the same signal and protocol never reach
-the weakest of the four feature-based classifiers. Every room-clustered interval on one
-side overlaps every interval on the other, so the separation rests on that consistency,
-not on any single test.
+What survives: trained only on simulation, the six parameters put 15 of 17 unseen real
+rooms in the right coarse group against a baseline of 10, and 20 neural runs on the same
+protocol never reach the weakest of the four classical models.
 
-Not controlled: simulated files are written at ~1.9x RT60 against ~1.3x for real
+What that is worth: not much on its own. Paired tests added after the three reviews
+(`src/significance.py`) give an exact McNemar of p = 0.125 for every classical model
+against the baseline, and p = 0.065 to 0.453 against the networks per seed. Per RIR the
+same comparisons give p = 0.004 to 0.052, but that counts 67 correlated measurements as
+67 independent ones. At room level, the unit this project argued for from the start,
+nothing is significant. Every interval on one side overlaps every interval on the other.
+What is left is that the direction is the same in all 24 comparisons, which is a weaker
+claim than the accuracy table looks like.
+
+The two arms do not see the same signal: ingest.py truncates to 3.2 s, utils.py reads
+whole files, and 61% of simulated stairwells exceed that window against 0% of offices.
+Controlled after the fact (`src/control_truncation.py`): re-extracting the six
+parameters from the network's own view leaves coarse accuracy unchanged to three
+decimals for three of the four models, and costs XGBoost 0.045 and one room. Truncation
+is not what separates the arms. Adding a noise floor on top does cost the features, 0.69
+to 0.75 coarse and 12 to 13 rooms, which is the missing Schroeder truncation showing up.
+
+Still not controlled: simulated files are written at ~1.9x RT60 against ~1.3x for real
 recordings, and the fixed-length neural input exposes that transition point.
 
-Archived here.
+The entries above were shortened when the project was archived. The pre-retraction
+version of this diary, including the reasoning that reached the wrong conclusion and how
+confident it sounded, is in the git history.

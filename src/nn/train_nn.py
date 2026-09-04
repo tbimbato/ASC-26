@@ -7,9 +7,13 @@
      train.py: predictions re-scored after the fact, never merged before
      training. Scored twice, with and without AdaBN.
 
-The headline comparison is the in-sim -> sim2real DROP of each net against the
-drop of the 6 physical features, over four architectures (see model.py) on the
-identical log-mel input and protocol. Edit RUN below to train a subset.
+The comparison is sim2real accuracy against the 6 physical features, over four
+architectures (see model.py) on the same log-mel input, split and test set. Beware:
+ingest.py truncates to a fixed window while the feature pipeline reads whole files, so
+the two arms of the study do not see the same signal (README, Limitations). The
+in-sim numbers are reported alongside, but they largely track how well each model
+fits the simulator and do not separate the architectures on transfer. Name models
+on the command line to train a subset.
 
 Results go to results/metrics_nn.csv (separate file: train.py rewrites its
 own metrics.csv wholesale). Rows are merged per model: re-running a model

@@ -35,6 +35,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 RESULTS.mkdir(exist_ok=True)
 
+METRICS = RESULTS / "metrics.csv"
+PREDS = RESULTS / "preds.csv"  # per-RIR predictions, for paired tests
+
 FEATURES = ["rt60", "edt", "c80", "d50", "ts", "drr"]
 OVERLAP_CLASSES = ["office", "meeting_room", "lecture_room", "staircase"]
 
@@ -131,7 +134,8 @@ def room_level_accuracy(y_true, y_pred, rooms) -> float:
 
 
 def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
-                metrics: list, feature_cols: list[str], save_cm: bool = True) -> None:
+                metrics: list, feature_cols: list[str], save_cm: bool = True,
+                pred_rows: list = None) -> None:
     le = LabelEncoder()
     le.fit(train_df["label"].values)
     y_train = le.transform(train_df["label"].values)
@@ -165,6 +169,12 @@ def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
                         "acc_rooms": round(room_level_accuracy(y_test, y_pred, rooms), 4)})
         print(f"[{eval_name}] {model_name:12s} acc={acc:.3f} [{lo:.3f},{hi:.3f}] "
               f"f1={f1m:.3f} rooms={room_level_accuracy(y_test, y_pred, rooms):.3f}")
+        if pred_rows is not None:
+            pred_rows.extend(
+                {"eval": eval_name, "model": model_name, "room_id": r,
+                 "y_true": int(t), "y_pred": int(pr), "label_true": le.classes_[t],
+                 "label_pred": le.classes_[pr]}
+                for r, t, pr in zip(rooms, y_test, y_pred))
         if save_cm:
             save_confusion(y_test, y_pred, le.classes_, model_name, eval_name)
 
@@ -183,6 +193,12 @@ def run_holdout(train_df: pd.DataFrame, test_df: pd.DataFrame, eval_name: str,
         print(f"[{eval_name}_coarse] {model_name:12s} acc={acc_c:.3f} "
               f"[{lo_c:.3f},{hi_c:.3f}] f1={f1_c:.3f} "
               f"rooms={room_level_accuracy(ct, cp, rooms):.3f}")
+        if pred_rows is not None:
+            pred_rows.extend(
+                {"eval": eval_name + "_coarse", "model": model_name, "room_id": r,
+                 "y_true": int(t), "y_pred": int(pr),
+                 "label_true": coarse_labels[t], "label_pred": coarse_labels[pr]}
+                for r, t, pr in zip(rooms, ct, cp))
         if save_cm:
             save_confusion(ct, cp, coarse_labels, model_name, eval_name + "_coarse")
 
@@ -198,6 +214,7 @@ def main() -> None:
     print(sim["label"].value_counts(), "\n")
 
     metrics: list = []
+    pred_rows: list = []
 
     # A) in-sim, all classes, already room-independent (one RIR per simulated room)
     run_cv(sim, "insim_5fold", metrics, FEATURES)
@@ -206,16 +223,17 @@ def main() -> None:
     sim_overlap = sim[sim["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
     real_overlap = real[real["label"].isin(OVERLAP_CLASSES)].reset_index(drop=True)
 
-    # in-sim on the same 4 overlap classes, so the in-sim -> sim2real drop is
-    # computed on the same task (the 10-class number is not comparable)
+    # in-sim on the same 4 overlap classes, so in-sim and sim2real are measured
+    # on one task (the 10-class number is not comparable to either)
     run_cv(sim_overlap, "insim_overlap_5fold", metrics, FEATURES)
     print(f"\nSim-to-real on classes {OVERLAP_CLASSES}: "
           f"{len(sim_overlap)} synthetic train rooms, "
           f"{real_overlap['room_id'].nunique()} real test rooms "
           f"({len(real_overlap)} samples)")
-    run_holdout(sim_overlap, real_overlap, "sim2real", metrics, FEATURES)
+    run_holdout(sim_overlap, real_overlap, "sim2real", metrics, FEATURES,
+                pred_rows=pred_rows)
 
-    # Which of the six actually carry the transfer, and whether one is enough.
+    # Which of the six carry the transfer, and whether one is enough.
     print("\nfeature ablation")
     run_holdout(sim_overlap, real_overlap, "abl_rt60_only", metrics, ["rt60"],
                 save_cm=False)
@@ -224,9 +242,9 @@ def main() -> None:
         run_holdout(sim_overlap, real_overlap, f"abl_no_{f}", metrics, rest,
                     save_cm=False)
 
-    out = pd.DataFrame(metrics)
-    out.to_csv(RESULTS / "metrics.csv", index=False)
-    print(f"\nSaved {RESULTS / 'metrics.csv'} and confusion matrices.")
+    pd.DataFrame(metrics).to_csv(METRICS, index=False)
+    pd.DataFrame(pred_rows).to_csv(PREDS, index=False)
+    print(f"\nSaved {METRICS}, {PREDS} and confusion matrices.")
 
 
 if __name__ == "__main__":

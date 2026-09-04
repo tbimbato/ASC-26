@@ -28,7 +28,12 @@ def extract_features(wav_path: str) -> dict:
         g = gcd(fs, TARGET_FS)
         ir = resample_poly(ir, TARGET_FS // g, fs // g)
         fs = TARGET_FS
+    return features_from_ir(ir, fs)
 
+
+def features_from_ir(ir, fs: int = TARGET_FS) -> dict:
+    """The six parameters from an already-loaded, already-resampled IR. Split out
+    so a control experiment can feed in a signal the neural pipeline shaped."""
     # RT60 broadband. pra.measure_rt60 already extrapolates the T30 slope to
     # a full -60dB decay internally (extrapolate_value_db is hardcoded there),
     # so decay_db=30 controls the fit window, not the output scale. No extra

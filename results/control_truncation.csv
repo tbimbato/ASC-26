@@ -1,0 +1,17 @@
+condition,level,model,accuracy,f1_macro,baseline,ci_low,ci_high,acc_rooms
+trunc,fine,RandomForest,0.3731,0.3513,0.3582,0.1781,0.6,0.4706
+trunc,coarse,RandomForest,0.7463,0.6645,0.5672,0.5571,0.918,0.8824
+trunc,fine,SVM,0.3582,0.3424,0.3582,0.1551,0.5857,0.4706
+trunc,coarse,SVM,0.7463,0.6689,0.5672,0.5571,0.9138,0.8824
+trunc,fine,kNN,0.3582,0.3568,0.3582,0.1714,0.5672,0.4706
+trunc,coarse,kNN,0.7313,0.6618,0.5672,0.5616,0.8806,0.8824
+trunc,fine,XGBoost,0.3881,0.3801,0.3582,0.1917,0.6066,0.4706
+trunc,coarse,XGBoost,0.7612,0.6847,0.5672,0.5821,0.9143,0.8235
+trunc_noise,fine,RandomForest,0.4328,0.4067,0.3582,0.2368,0.6393,0.4706
+trunc_noise,coarse,RandomForest,0.7313,0.6685,0.5672,0.5312,0.9041,0.7647
+trunc_noise,fine,SVM,0.403,0.3887,0.3582,0.1974,0.6302,0.4706
+trunc_noise,coarse,SVM,0.7463,0.679,0.5672,0.5429,0.9219,0.7647
+trunc_noise,fine,kNN,0.4179,0.4036,0.3582,0.2344,0.6143,0.4118
+trunc_noise,coarse,kNN,0.6866,0.6349,0.5672,0.5,0.8493,0.7059
+trunc_noise,fine,XGBoost,0.4328,0.4057,0.3582,0.2344,0.6538,0.4706
+trunc_noise,coarse,XGBoost,0.7164,0.6529,0.5672,0.5224,0.8852,0.7647

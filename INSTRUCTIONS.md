@@ -94,7 +94,7 @@ also carry `baseline`, `ci_low`, `ci_high` and `acc_rooms`.
 ## Phase 1 (done, archived)
 
 Real-RIR classification on BUT ReverbDB. Findings and confusion matrices are in
-`results/phase1_but/`, the reasoning in `notes.md`. The phase-1 indexing script
+`results/phase1_but/`. The phase-1 indexing script
 was removed in the pivot; phase 1 is kept as a documented result, not a runnable
 step.
 

@@ -13,7 +13,7 @@ Steps, in order:
      decay does
   5. zero-pad or truncate to FIXED_LEN_S. Padding leaves an edge whose position
      tracks the original duration, which in the sim set correlates with RT60;
-     see notes.md for what that costs.
+     see the Limitations section of the README for what that costs.
 """
 
 import numpy as np

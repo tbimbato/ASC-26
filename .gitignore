@@ -348,3 +348,8 @@ edit.md
 # internal working docs, not part of the published record
 review_findings.md
 sim2real_diagram.svg
+notes.md
+
+.agents/
+skills-lock.json
+

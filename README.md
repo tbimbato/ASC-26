@@ -259,7 +259,7 @@ terms.
 
 Metrics land in `results/metrics.csv` and `results/metrics_nn.csv`, per-sample
 predictions on the real set in `results/preds.csv` and `results/preds_nn.csv`. Setup in
-[INSTRUCTIONS.md](INSTRUCTIONS.md), working notes in [notes.md](notes.md).
+[INSTRUCTIONS.md](INSTRUCTIONS.md).
 
 ## Status
 
